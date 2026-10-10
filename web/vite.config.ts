@@ -28,6 +28,10 @@ function serveData(): Plugin {
 
 export default defineConfig({
   plugins: [serveData()],
-  server: { port: 5173 },
+  server: {
+    port: 5173,
+    // The local triage server (src/server). Override to rehearse offline: TRIAGE_API=http://127.0.0.1:1
+    proxy: { "/api": process.env.TRIAGE_API ?? "http://127.0.0.1:8787" },
+  },
   build: { outDir: "dist", target: "es2022" },
 });

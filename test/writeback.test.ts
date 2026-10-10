@@ -50,7 +50,9 @@ describe("Gate", () => {
     expect(r).toMatchObject({ ok: true, mode: "live", applied: true });
     expect(calls[0]?.method).toBe("POST");
     expect(calls[0]?.url).toContain("/repos/o/r/issues/5/comments");
-    expect((calls[0]?.body as { body: string }).body.startsWith(COMMENT_PREFIX)).toBe(true);
+    expect(
+      ((calls[0]?.body as { body: string } | undefined)?.body ?? "").startsWith(COMMENT_PREFIX),
+    ).toBe(true);
     const lines = read();
     expect(lines.map((l) => l.outcome)).toEqual(["pending", "applied"]);
     expect(lines[1].handle.commentId).toBe(4242);
@@ -139,7 +141,9 @@ describe("Gate", () => {
       payload: { reason: "completed", text: "verified" },
     });
     expect(calls.map((c) => c.method)).toEqual(["GET", "PATCH", "POST"]);
-    expect((calls[2]?.body as { body: string }).body.startsWith(COMMENT_PREFIX)).toBe(true);
+    expect(
+      ((calls[2]?.body as { body: string } | undefined)?.body ?? "").startsWith(COMMENT_PREFIX),
+    ).toBe(true);
     calls.length = 0;
     expect((await g.undo(r.undoId)).ok).toBe(true);
     expect(calls.map((c) => c.method)).toEqual(["DELETE", "PATCH"]);

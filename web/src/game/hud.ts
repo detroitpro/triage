@@ -1,11 +1,23 @@
 import type { Biome, Door, Placement, Vec3, World } from "../../../src/world/types.ts";
+import type { Mode } from "../pure/actions.ts";
 import type { Bounds } from "../pure/collision.ts";
 import { distanceXZ } from "../pure/collision.ts";
 import { compassMarks } from "../pure/compass.ts";
 import { truncate } from "../pure/dialogueText.ts";
 import { fitProjection, headingTriangle, project } from "../pure/minimap.ts";
+import { glyphPath, tokenShape } from "../pure/satchel.ts";
 import { themeVars } from "../pure/theme.ts";
 import type { Area } from "./areas.ts";
+
+const HOLD_CIRC = 2 * Math.PI * 26;
+const REWIND_CIRC = 2 * Math.PI * 16;
+const RADIAL_R = 78;
+
+export interface RadialItem {
+  label: string;
+  color: string;
+  ghost: boolean;
+}
 
 function el<T extends HTMLElement>(id: string): T {
   const e = document.getElementById(id);
@@ -76,6 +88,15 @@ export class Hud {
   private minimap = el<HTMLCanvasElement>("minimap");
   private minimapCaption = el<HTMLElement>("minimap-caption");
   private compass = el<HTMLCanvasElement>("compass");
+  private mode = el<HTMLElement>("hud-mode");
+  private hold = el<HTMLElement>("hold");
+  private holdFill = this.hold.querySelector<SVGCircleElement>(".fill");
+  private holdLabel = el<HTMLElement>("hold-label");
+  private tokenSlot = el<HTMLElement>("hud-token");
+  private radial = el<HTMLElement>("hud-radial");
+  private rewind = el<HTMLElement>("hud-rewind");
+  private rewindFill = this.rewind.querySelector<SVGCircleElement>(".rw-fill");
+  private rewindWhat = el<HTMLElement>("rewind-what");
   private toastTimer = 0;
   private bannerTimer = 0;
   private queue: Announcement[] = [];
@@ -242,6 +263,97 @@ export class Hud {
     this.toast.classList.add("on");
     clearTimeout(this.toastTimer);
     this.toastTimer = window.setTimeout(() => this.toast.classList.remove("on"), ms);
+  }
+
+  // ---- verbs: mode, token, hold ring, radial, rewind ----------------------------------
+
+  setMode(mode: Mode, offline: boolean): void {
+    this.mode.textContent = mode === "live" ? "LIVE" : "PRACTICE";
+    this.mode.className = `tag mode ${mode === "live" ? "live" : "practice"}${offline ? " offline" : ""}`;
+    this.mode.title = offline
+      ? "server unreachable: offline practice, nothing is written"
+      : mode === "live"
+        ? "actions write to GitHub after the hold ring completes"
+        : "practice: actions are rehearsed, nothing is written";
+  }
+
+  /** The satchel token in hand, shown beside the reticle. `ready` = an NPC is in range. */
+  setToken(token: { name: string; color: string } | null, ready = false): void {
+    if (!token) {
+      this.tokenSlot.classList.remove("on", "ready");
+      return;
+    }
+    const path = this.tokenSlot.querySelector("path");
+    path?.setAttribute("d", glyphPath(tokenShape(token.name)));
+    const name = this.tokenSlot.querySelector(".tname");
+    if (name) name.textContent = token.name;
+    this.tokenSlot.style.setProperty("--tc", token.color);
+    this.tokenSlot.classList.add("on");
+    this.tokenSlot.classList.toggle("ready", ready);
+  }
+
+  /** Drive the ring: progress 0..1, or null to hide. */
+  setHold(progress: number | null, label = "", done = false): void {
+    if (progress === null) {
+      this.hold.classList.remove("on", "done");
+      return;
+    }
+    this.hold.classList.add("on");
+    this.hold.classList.toggle("done", done);
+    this.holdFill?.style.setProperty("stroke-dashoffset", String(HOLD_CIRC * (1 - progress)));
+    if (this.holdLabel.textContent !== label) this.holdLabel.textContent = label;
+  }
+
+  showRadial(items: RadialItem[], selected: number, onPick: (i: number) => void): void {
+    this.radial.innerHTML = "";
+    const n = items.length;
+    items.forEach((it, i) => {
+      // Spread around the reticle starting at the top, leaving the bottom for the hint.
+      const a = -Math.PI / 2 + (i / Math.max(1, n)) * Math.PI * 2;
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = `spoke${i === selected ? " selected" : ""}${it.ghost ? " ghost" : ""}`;
+      b.style.setProperty("--tc", it.color);
+      b.style.left = `${Math.cos(a) * RADIAL_R}px`;
+      b.style.top = `${Math.sin(a) * RADIAL_R}px`;
+      b.style.animationDelay = `${i * 30}ms`;
+      b.innerHTML = `<svg class="spoke-svg" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="${glyphPath(tokenShape(it.label))}"/></svg><span>${escapeText(it.label)}</span>`;
+      b.addEventListener("click", () => onPick(i));
+      this.radial.appendChild(b);
+    });
+    const hint = document.createElement("div");
+    hint.className = "radial-hint";
+    hint.innerHTML = `<span class="keycap">←</span><span class="keycap">→</span> pick · hold <span class="keycap">T</span> take · <span class="keycap">Esc</span>`;
+    this.radial.appendChild(hint);
+    this.radial.classList.add("on");
+  }
+
+  selectRadial(i: number): void {
+    const spokes = this.radial.querySelectorAll(".spoke");
+    spokes.forEach((s, k) => {
+      s.classList.toggle("selected", k === i);
+    });
+  }
+
+  hideRadial(): void {
+    this.radial.classList.remove("on");
+    this.radial.innerHTML = "";
+  }
+
+  /** Rewind token: remaining 1 → 0 drains the ring; null hides it. */
+  setRewind(remaining: number | null, what = ""): void {
+    if (remaining === null) {
+      this.rewind.classList.remove("on");
+      return;
+    }
+    this.rewind.classList.add("on");
+    this.rewindFill?.style.setProperty("stroke-dashoffset", String(REWIND_CIRC * (1 - remaining)));
+    if (this.rewindWhat.textContent !== what) this.rewindWhat.textContent = what;
+  }
+
+  /** Verb feedback banner; `practice` marks rehearsed actions. */
+  onAction(text: string, practice: boolean): void {
+    this.announce(text, practice ? "event" : "reward", practice ? "Practice" : "Done");
   }
 
   // ---- per-frame --------------------------------------------------------------------

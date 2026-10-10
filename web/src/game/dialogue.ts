@@ -1,5 +1,16 @@
-import type { NpcForm, Placement, Region } from "../../../src/world/types.ts";
+import type { LabelMeta, NpcForm, Placement, Region } from "../../../src/world/types.ts";
+import {
+  type Action,
+  type Intent,
+  localIntent,
+  type Offer,
+  offerFor,
+  PROMPT_KEYS,
+} from "../pure/actions.ts";
 import { describeEdge, localAnswer, PROMPTS, type Prompt } from "../pure/dialogueText.ts";
+import { addNote, listNotes } from "../pure/progress.ts";
+import { labelColor } from "../pure/satchel.ts";
+import type { DialogueQuery, DialogueResponse } from "./api.ts";
 import { escapeHtml } from "./mapScreen.ts";
 
 export interface DialogueCallbacks {
@@ -8,7 +19,15 @@ export interface DialogueCallbacks {
   /** Draw (or clear) connection lines in the world. */
   showEdges(issue: number | null): void;
   onClose(): void;
-  fetchFn?: typeof fetch;
+  /** Server dialogue; null when offline (local templates take over). */
+  ask(issue: number, q: DialogueQuery): Promise<DialogueResponse | null>;
+  /** Start the hold ring for a physical verb; returns false if one is already running. */
+  beginHold(action: Action, key: string, grantId?: string): boolean;
+  endHold(key: string): void;
+  labelSet(): readonly LabelMeta[];
+  repo(): string;
+  /** Offline rehearsal needs no grant. */
+  offline(): boolean;
 }
 
 /** Flat silhouettes for the name plate, one per NPC form. */
@@ -31,10 +50,19 @@ function pips(value: number, cls = ""): string {
   return `<span class="pips ${cls}">${dots.join("")}</span>`;
 }
 
+type BubbleState = "pending" | "posted" | "practice" | "private";
+
+interface Bubble {
+  text: string;
+  state: BubbleState;
+}
+
 export class Dialogue {
   private root: HTMLElement;
   open = false;
   current: Placement | null = null;
+  /** Things said this session, per issue, so reopening the panel keeps the seals. */
+  private bubbles = new Map<number, Bubble[]>();
 
   constructor(private cb: DialogueCallbacks) {
     const root = document.getElementById("dialogue");
@@ -49,6 +77,7 @@ export class Dialogue {
     const d = p.dimensions;
     const q = d.quarantined;
     const reviewed = this.cb.isReviewed(p.issue);
+    const labelSet = this.cb.labelSet();
     this.root.innerHTML = `<div class="panel ${reviewed ? "reviewed" : ""}">
       <div class="nameplate">
         <svg class="form-icon" viewBox="0 0 24 24" aria-hidden="true">${FORM_ICONS[p.form] ?? FORM_ICONS.villager}</svg>
@@ -59,7 +88,7 @@ export class Dialogue {
       ${q ? `<div class="quarantine-seal">Quarantined</div>` : ""}
       <div class="speech-body">
         <div class="speech-top">
-          <div class="labels">${p.labels.map((l) => `<span>${escapeHtml(l)}</span>`).join("")}</div>
+          <div class="labels" id="dlg-labels">${p.labels.map((l) => `<span style="border-color:${labelColor(labelSet, l)}">${escapeHtml(l)}</span>`).join("")}</div>
         </div>
         <div class="dims">
           <span>area <b>${escapeHtml(d.functionalArea)}</b></span>
@@ -74,6 +103,8 @@ export class Dialogue {
         <div class="chips" id="dlg-prompts">${PROMPTS.map((t, i) => `<button class="chip" data-prompt="${i}" type="button">${t}</button>`).join("")}</div>
         <div class="answer" id="dlg-answer">…</div>
         <ul class="edge-list" id="dlg-edges"></ul>
+        <div class="bubbles" id="dlg-bubbles"></div>
+        <div class="offer" id="dlg-offer"></div>
         <div class="row">
           <input id="dlg-input" placeholder="Say something to #${p.issue}…" ${q ? "disabled" : ""} autocomplete="off" />
           <button class="btn" id="dlg-send" type="button" ${q ? "disabled" : ""}>Send</button>
@@ -98,15 +129,23 @@ export class Dialogue {
       void answer.offsetWidth;
       answer.style.animation = "";
     };
+    const showEdges = () => {
+      this.cb.showEdges(p.issue);
+      if (edges) edges.innerHTML = p.edges.map((e) => edgeItem(e)).join("");
+    };
     for (const b of chips) {
       b.addEventListener("click", () => {
         for (const c of chips) c.classList.toggle("active", c === b);
         const prompt = PROMPTS[Number(b.dataset.prompt)] as Prompt;
+        this.clearOffer();
+        // Local answer first (instant), then the server's if it is there.
         setAnswer(localAnswer(prompt, p, region));
-        if (prompt === "Who are you connected to?") {
-          this.cb.showEdges(p.issue);
-          if (edges) edges.innerHTML = p.edges.map((e) => edgeItem(e)).join("");
-        }
+        if (prompt === "Who are you connected to?") showEdges();
+        void this.cb.ask(p.issue, { prompt: PROMPT_KEYS[prompt] }).then((r) => {
+          if (!this.open || this.current !== p || !r?.reply) return;
+          if (!b.classList.contains("active")) return;
+          setAnswer(r.reply);
+        });
       });
     }
     const input = this.root.querySelector<HTMLInputElement>("#dlg-input");
@@ -115,15 +154,32 @@ export class Dialogue {
       if (!text || !input) return;
       input.value = "";
       for (const c of chips) c.classList.remove("active");
+      this.clearOffer();
       setAnswer("…", true);
-      const reply = await postDialogue(p.issue, text, this.cb.fetchFn ?? fetch);
-      setAnswer(reply);
+      const r = await this.cb.ask(p.issue, { text });
+      if (!this.open || this.current !== p) return;
+      let intent: Intent;
+      let grantId: string | undefined;
+      if (r) {
+        setAnswer(r.reply || "…");
+        intent = r.intent ?? localIntent(text, p.labels);
+        grantId = r.grantId;
+      } else {
+        intent = localIntent(text, p.labels);
+        setAnswer(offlineReply(text, intent, p));
+      }
+      if (intent.quarantined) {
+        this.renderOffer({ kind: "wheel" }, p, text, undefined, true);
+        return;
+      }
+      this.renderOffer(offerFor(intent), p, text, grantId, false);
     };
     this.root.querySelector("#dlg-send")?.addEventListener("click", () => void send());
     input?.addEventListener("keydown", (e) => {
       if (e.key === "Enter") void send();
       e.stopPropagation();
     });
+    input?.addEventListener("keyup", (e) => e.stopPropagation());
     const reviewBtn = this.root.querySelector<HTMLButtonElement>("#dlg-review");
     reviewBtn?.addEventListener("click", () => {
       const on = !this.cb.isReviewed(p.issue);
@@ -144,6 +200,7 @@ export class Dialogue {
       }
     });
     this.root.querySelector("#dlg-close")?.addEventListener("click", () => this.hide());
+    this.renderBubbles(p.issue);
     chips[0]?.click();
   }
 
@@ -152,8 +209,228 @@ export class Dialogue {
     this.open = false;
     this.current = null;
     this.root.classList.add("hidden");
+    this.cb.endHold("pointer");
     this.cb.showEdges(null);
     this.cb.onClose();
+  }
+
+  /** Re-render the label strip after a give or take. */
+  refreshLabels(p: Placement): void {
+    if (!this.open || this.current !== p) return;
+    const el = this.root.querySelector<HTMLElement>("#dlg-labels");
+    if (!el) return;
+    const labelSet = this.cb.labelSet();
+    el.innerHTML = p.labels
+      .map((l) => `<span style="border-color:${labelColor(labelSet, l)}">${escapeHtml(l)}</span>`)
+      .join("");
+  }
+
+  /** A comment finished: seal its bubble as posted or practice. */
+  markPosted(issue: number, text: string, state: "posted" | "practice"): void {
+    const list = this.bubbles.get(issue) ?? [];
+    const b = list.find((x) => x.text === text && x.state === "pending");
+    if (b) b.state = state;
+    else list.push({ text, state });
+    this.bubbles.set(issue, list);
+    this.renderBubbles(issue);
+  }
+
+  // ---- offers: the physical verb for what you said ----------------------------------------
+
+  private clearOffer(): void {
+    const o = this.root.querySelector<HTMLElement>("#dlg-offer");
+    if (o) o.innerHTML = "";
+  }
+
+  private renderOffer(
+    offer: Offer,
+    p: Placement,
+    text: string,
+    grantId: string | undefined,
+    sealed: boolean,
+  ): void {
+    const o = this.root.querySelector<HTMLElement>("#dlg-offer");
+    if (!o) return;
+    const labelSet = this.cb.labelSet();
+    const verb = (label: string, action: Action, color: string, needsGrant: boolean) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "chip verb";
+      b.style.setProperty("--tc", color);
+      b.innerHTML = `${escapeHtml(label)}<span class="keycap key-sm">hold</span>`;
+      if (needsGrant && !grantId && !this.offlineGrantOk()) {
+        b.disabled = true;
+        b.title = "the server issued no grant for this";
+      }
+      const start = (e: Event) => {
+        e.preventDefault();
+        if (b.disabled) return;
+        if (action.type === "comment") this.pushBubble(p.issue, text, "pending");
+        if (this.cb.beginHold(action, "pointer", grantId)) b.classList.add("holding");
+      };
+      const stop = () => {
+        b.classList.remove("holding");
+        this.cb.endHold("pointer");
+        const list = this.bubbles.get(p.issue);
+        if (list?.at(-1)?.state === "pending") {
+          // Still pending after release means the hold was cancelled (commit seals it fast).
+          window.setTimeout(() => {
+            const l = this.bubbles.get(p.issue);
+            const last = l?.at(-1);
+            if (last?.state === "pending" && l) {
+              l.pop();
+              this.renderBubbles(p.issue);
+            }
+          }, 150);
+        }
+      };
+      b.addEventListener("pointerdown", start);
+      b.addEventListener("pointerup", stop);
+      b.addEventListener("pointerleave", stop);
+      b.addEventListener("pointercancel", stop);
+      b.addEventListener("keydown", (e) => {
+        if ((e.code === "Enter" || e.code === "Space") && !e.repeat) start(e);
+      });
+      b.addEventListener("keyup", (e) => {
+        if (e.code === "Enter" || e.code === "Space") stop();
+      });
+      return b;
+    };
+    const lead = (t: string) => {
+      const s = document.createElement("span");
+      s.className = "lead";
+      s.textContent = t;
+      return s;
+    };
+    const plain = (t: string, onClick: () => void) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "chip";
+      b.textContent = t;
+      b.addEventListener("click", onClick);
+      return b;
+    };
+    o.innerHTML = "";
+    if (sealed) {
+      o.append(lead("sealed: this issue is quarantined, nothing can be posted"));
+      return;
+    }
+    switch (offer.kind) {
+      case "give": {
+        const label = offer.label;
+        if (p.labels.includes(label)) {
+          o.append(lead(`#${p.issue} already wears ${label}`));
+          return;
+        }
+        o.append(
+          lead("that sounds like a badge"),
+          verb(
+            `Give ${label}?`,
+            { type: "label-add", issue: p.issue, payload: { label } },
+            labelColor(labelSet, label),
+            false,
+          ),
+        );
+        return;
+      }
+      case "take": {
+        const label = offer.label;
+        o.append(
+          lead("that sounds like taking a badge"),
+          verb(
+            `Take ${label}?`,
+            { type: "label-remove", issue: p.issue, payload: { label } },
+            labelColor(labelSet, label),
+            false,
+          ),
+        );
+        return;
+      }
+      case "release":
+        o.append(
+          lead("that sounds like a release"),
+          verb(
+            `Release #${p.issue}?`,
+            { type: "close", issue: p.issue, payload: { reason: "completed" } },
+            "var(--ok)",
+            true,
+          ),
+          verb(
+            "Send through the hourglass?",
+            { type: "close", issue: p.issue, payload: { reason: "not_planned" } },
+            "var(--portal)",
+            true,
+          ),
+        );
+        return;
+      default:
+        o.append(
+          lead("what do you want to do with that?"),
+          verb("Say it", { type: "comment", issue: p.issue, payload: { text } }, "var(--ok)", true),
+          plain("Just thinking", () => {
+            addNote(localStorage, this.cb.repo(), p.issue, text);
+            this.pushBubble(p.issue, text, "private");
+            this.clearOffer();
+          }),
+          plain("Ask", () => {
+            this.clearOffer();
+            const s = lead("asked, nothing posted");
+            o.append(s);
+          }),
+        );
+    }
+  }
+
+  /** Offline proposals need no grant: the whole thing is a rehearsal. */
+  private offlineGrantOk(): boolean {
+    return this.cb.offline();
+  }
+
+  private pushBubble(issue: number, text: string, state: BubbleState): void {
+    const list = this.bubbles.get(issue) ?? [];
+    list.push({ text, state });
+    this.bubbles.set(issue, list);
+    this.renderBubbles(issue);
+  }
+
+  private renderBubbles(issue: number): void {
+    const el = this.root.querySelector<HTMLElement>("#dlg-bubbles");
+    if (!el || this.current?.issue !== issue) return;
+    const notes = listNotes(localStorage, this.cb.repo(), issue);
+    const session = this.bubbles.get(issue) ?? [];
+    const items: Bubble[] = [
+      ...notes
+        .filter((n) => !session.some((b) => b.state === "private" && b.text === n))
+        .map((text) => ({ text, state: "private" as const })),
+      ...session,
+    ];
+    const seal: Record<BubbleState, string> = {
+      pending: "sending",
+      posted: "posted",
+      practice: "practice",
+      private: "private",
+    };
+    el.innerHTML = items
+      .map(
+        (b) =>
+          `<div class="bubble ${b.state}"><span class="seal">${seal[b.state]}</span>${escapeHtml(b.text)}</div>`,
+      )
+      .join("");
+  }
+}
+
+function offlineReply(text: string, intent: Intent, p: Placement): string {
+  switch (intent.choice) {
+    case "verify":
+      return `You want to release me. The server is away, so this would be a rehearsal: hold the chip and watch what happens.`;
+    case "label":
+      return `A badge, then: ${intent.label}. Offline I can only wear it as a ghost.`;
+    case "defer":
+      return `Later it is. I will wait where I stand.`;
+    case "need_more":
+      return `I only know my record: "${p.title}". The server is away, so I cannot think harder than that.`;
+    default:
+      return `I heard: "${text}". The server is away; nothing can be posted, but you can rehearse it.`;
   }
 }
 
@@ -173,22 +450,3 @@ export const EDGE_COLORS: Record<string, string> = {
   "user-journey": "#f472b6",
   security: "#ef4444",
 };
-
-export async function postDialogue(
-  issue: number,
-  text: string,
-  fetchFn: typeof fetch,
-): Promise<string> {
-  try {
-    const res = await fetchFn("/api/dialogue", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ issue, text }),
-    });
-    if (!res.ok) return "dialogue server not running (dry run)";
-    const data = (await res.json()) as { reply?: string; text?: string };
-    return data.reply ?? data.text ?? JSON.stringify(data);
-  } catch {
-    return "dialogue server not running (dry run)";
-  }
-}

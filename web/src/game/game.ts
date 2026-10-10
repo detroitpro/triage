@@ -1,20 +1,24 @@
 import * as THREE from "three";
-import type { Placement, Region, Vec3, World } from "../../../src/world/types.ts";
+import type { Door, Placement, Region, Vec3, World } from "../../../src/world/types.ts";
 import { loadWorld } from "../load.ts";
+import type { Action } from "../pure/actions.ts";
 import { distanceXZ } from "../pure/collision.ts";
 import { findTriggeredDoor, rearmDoors } from "../pure/doors.ts";
 import { isReviewed, setReviewed } from "../pure/progress.ts";
 import { lensUrl } from "../pure/worldUrl.ts";
+import { Api } from "./api.ts";
 import { type BuiltArea, buildArea, disposeArea } from "./areaBuilder.ts";
 import { type Area, areaLabel, findArea, findPlacement, HUB_ID, hubArea } from "./areas.ts";
 import { Dialogue, EDGE_COLORS } from "./dialogue.ts";
-import { animateDoor } from "./doors.ts";
+import { animateDoor, buildDoor, type DoorHandle } from "./doors.ts";
 import { Hud } from "./hud.ts";
 import { makeLabelSprite } from "./labels.ts";
 import { escapeHtml, MapScreen } from "./mapScreen.ts";
-import { animateNpc, setReviewedRing } from "./npc.ts";
+import { animateNpc, type NpcHandle, setReviewedRing } from "./npc.ts";
 import { Player } from "./player.ts";
+import { Satchel } from "./satchel.ts";
 import { loadSettings, mountSettings, type Settings } from "./settings.ts";
+import { Verbs } from "./verbs.ts";
 
 const TALK_DISTANCE = 2.5;
 
@@ -25,6 +29,20 @@ export interface TriageDebug {
   openMap(): void;
   closeMap(): void;
   talk(issueNumber: number): void;
+  /** Verbs: drive the satchel and hold ring without a keyboard. */
+  openSatchel(): void;
+  closeSatchel(): void;
+  selectToken(name: string | null): void;
+  /** Stand by the issue and start the give hold with the token in hand (held until releaseHold). */
+  give(issueNumber: number): boolean;
+  /** Open the take radial for the issue. */
+  take(issueNumber: number): void;
+  /** Start the hold ring for any action; completes on its own after 700 ms. */
+  startHold(action: Action): boolean;
+  releaseHold(): void;
+  /** Pretend the server applies everything, to exercise the rewind path offline. */
+  simulateLive(on: boolean): void;
+  api: Api;
   world: World;
 }
 
@@ -35,6 +53,9 @@ export class Game {
   private hud = new Hud();
   private map: MapScreen;
   private dialogue: Dialogue;
+  private satchel: Satchel;
+  private verbs: Verbs;
+  private api: Api;
   private settings: Settings;
   private built: BuiltArea | null = null;
   private armedDoors = new Set<string>();
@@ -43,6 +64,8 @@ export class Game {
   private nearest: Placement | null = null;
   private lastTalked: number | null = null;
   private completedPrompted = new Set<string>();
+  /** NPCs taken out of the scene by a release, kept for rewind. */
+  private departed = new Map<number, NpcHandle>();
   private overlays = {
     help: el("help"),
     settings: el("settings"),
@@ -60,6 +83,14 @@ export class Game {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.player = new Player(canvas, this.settings);
     this.scene.add(this.edgeLines);
+    this.api = new Api(undefined, () => {
+      this.hud.setMode("dry-run", true);
+      this.hud.announce(
+        "server unreachable: offline practice, nothing is written",
+        "event",
+        "Offline",
+      );
+    });
     this.map = new MapScreen(
       {
         teleport: (id) => this.travel(id),
@@ -68,11 +99,48 @@ export class Game {
       },
       () => this.onOverlayClosed(),
     );
+    this.satchel = new Satchel({
+      onSelect: (meta) => {
+        if (!meta) this.hud.setToken(null);
+        else this.hud.showToast(`${meta.name} in hand: walk up to an issue and hold G`);
+      },
+      onClose: () => this.onOverlayClosed(),
+    });
+    this.verbs = new Verbs(
+      {
+        world: () => this.world,
+        npc: (issue) => this.built?.npcs.get(issue) ?? this.departed.get(issue),
+        nearest: () => this.nearest,
+        reducedMotion: () => this.settings.reducedMotion,
+        removeNpc: (issue) => this.removeNpc(issue),
+        restoreNpc: (issue) => this.restoreNpc(issue),
+        released: (issue) => this.released(issue),
+        unreleased: (issue, doors) => this.unreleased(issue, doors),
+        regionExit: (issue) => this.regionExit(issue),
+        modal: (on) => {
+          if (on) {
+            this.player.inputBlocked = true;
+            this.player.unlock();
+          } else this.onOverlayClosed();
+        },
+        commentPosted: (issue, text, state) => this.dialogue.markPosted(issue, text, state),
+      },
+      this.api,
+      this.satchel,
+      this.hud,
+    );
     this.dialogue = new Dialogue({
       isReviewed: (issue) => isReviewed(localStorage, this.world.repo, issue),
       setReviewed: (issue, on) => this.markReviewed(issue, on),
       showEdges: (issue) => this.showEdges(issue),
       onClose: () => this.onOverlayClosed(),
+      ask: (issue, q) => this.api.dialogue(issue, q),
+      beginHold: (action, key, grantId) =>
+        this.verbs.begin(action, key, performance.now(), false, grantId),
+      endHold: (key) => this.verbs.end(key),
+      labelSet: () => this.world.labelSet ?? [],
+      repo: () => this.world.repo,
+      offline: () => this.api.offline,
     });
     mountSettings(this.overlays.settings, this.settings, () => this.player.applySettings());
     el("gear").addEventListener("click", () => this.toggle("settings"));
@@ -81,6 +149,12 @@ export class Game {
     });
     window.addEventListener("resize", () => this.resize());
     document.addEventListener("keydown", (e) => this.onKey(e));
+    document.addEventListener("keyup", (e) => this.verbs.keyUp(e));
+    window.addEventListener("blur", () => this.verbs.cancel());
+    canvas.addEventListener("mousedown", (e) => {
+      if (e.button === 0 && this.player.locked && !this.anyOverlay()) this.verbs.pointerDown();
+    });
+    document.addEventListener("mouseup", () => this.verbs.pointerUp());
     this.resize();
     this.installDebug();
   }
@@ -89,6 +163,7 @@ export class Game {
     if (regionId && findArea(this.world, regionId)) this.travel(regionId, false);
     else this.travel(HUB_ID, false);
     this.renderer.setAnimationLoop(() => this.frame());
+    void this.api.status().then(() => this.hud.setMode(this.api.mode, this.api.offline));
   }
 
   // ---- travel -----------------------------------------------------------------
@@ -101,7 +176,10 @@ export class Game {
     }
     const go = () => {
       if (this.built) disposeArea(this.built);
+      this.departed.clear();
       this.built = buildArea(area, this.world, (i) => isReviewed(localStorage, this.world.repo, i));
+      // Released issues stay gone until the world is rebuilt by the pipeline.
+      for (const p of area.placements) if (this.isReleased(p.issue)) this.removeNpc(p.issue);
       this.scene.add(this.built.group);
       this.applyAtmosphere(area);
       this.player.bounds = area.bounds;
@@ -167,6 +245,7 @@ export class Game {
       this.nearest = nearest;
       this.hud.setPrompt(nearest);
     }
+    this.verbs.frame(dt);
     this.hud.drawMinimap({
       bounds: built.area.bounds,
       npcs: [...built.npcs.values()].map((n) => ({
@@ -192,20 +271,31 @@ export class Game {
   // ---- input and overlays ------------------------------------------------------
 
   private onKey(e: KeyboardEvent): void {
+    if (this.verbs.radialOpen) {
+      this.verbs.keyDown(e, true);
+      return;
+    }
     if (e.code === "Tab") {
       e.preventDefault();
       if (this.map.open) this.map.hide();
-      else if (!this.dialogue.open) this.openMap();
+      else if (!this.dialogue.open && !this.satchel.open) this.openMap();
       return;
     }
     if (e.code === "Escape") {
       if (this.map.open) this.map.hide();
+      else if (this.satchel.open) this.satchel.hide();
       else if (this.dialogue.open) this.dialogue.hide();
       else if (!this.overlays.settings.classList.contains("hidden")) this.toggle("settings");
       else if (!this.overlays.done.classList.contains("hidden")) this.hideDone();
       return;
     }
-    if (this.dialogue.open) return;
+    if (e.code === "KeyI" && !this.dialogue.open && !this.map.open) {
+      if (this.satchel.open) this.satchel.hide();
+      else if (!this.anyOverlay()) this.openSatchel();
+      return;
+    }
+    if (this.dialogue.open || this.satchel.open) return;
+    if (this.verbs.keyDown(e, this.anyOverlay())) return;
     if (e.code === "KeyH") this.toggle("help");
     else if (e.code === "KeyP") this.toggle("settings");
     else if (e.code === "KeyE" && this.nearest && !this.anyOverlay()) this.talk(this.nearest.issue);
@@ -225,6 +315,8 @@ export class Game {
     return (
       this.map.open ||
       this.dialogue.open ||
+      this.satchel.open ||
+      this.verbs.radialOpen ||
       !this.overlays.help.classList.contains("hidden") ||
       !this.overlays.settings.classList.contains("hidden") ||
       !this.overlays.done.classList.contains("hidden")
@@ -241,6 +333,12 @@ export class Game {
     this.player.inputBlocked = true;
     this.player.unlock();
     this.map.show(this.world, this.built?.area.id ?? HUB_ID);
+  }
+
+  openSatchel(): void {
+    this.player.inputBlocked = true;
+    this.player.unlock();
+    this.satchel.show(this.world.labelSet ?? []);
   }
 
   talk(issue: number): void {
@@ -278,8 +376,8 @@ export class Game {
   private counts(regionId: string): { reviewed: number; total: number } {
     const r = this.world.regions.find((x) => x.id === regionId);
     if (!r) return { reviewed: 0, total: 0 };
-    const reviewed = r.placements.filter((p) =>
-      isReviewed(localStorage, this.world.repo, p.issue),
+    const reviewed = r.placements.filter(
+      (p) => isReviewed(localStorage, this.world.repo, p.issue) || this.isReleased(p.issue),
     ).length;
     return { reviewed, total: r.placements.length };
   }
@@ -323,6 +421,104 @@ export class Game {
   private hideDone(): void {
     this.overlays.done.classList.add("hidden");
     this.onOverlayClosed();
+  }
+
+  // ---- release: NPCs leaving and returning, doors unlocking ---------------------------
+
+  private releasedKey(issue: number): string {
+    return `triage:released:${this.world.repo}#${issue}`;
+  }
+
+  private isReleased(issue: number): boolean {
+    return sessionStorage.getItem(this.releasedKey(issue)) === "1";
+  }
+
+  private removeNpc(issue: number): void {
+    const h = this.built?.npcs.get(issue);
+    if (!h) return;
+    this.built?.npcs.delete(issue);
+    h.group.removeFromParent();
+    this.departed.set(issue, h);
+    if (this.nearest?.issue === issue) {
+      this.nearest = null;
+      this.hud.setPrompt(null);
+    }
+  }
+
+  private restoreNpc(issue: number): void {
+    const h = this.departed.get(issue);
+    if (!h || !this.built) return;
+    this.departed.delete(issue);
+    this.built.group.add(h.group);
+    this.built.npcs.set(issue, h);
+  }
+
+  /** Counters tick; doors locked by this issue open with a banner. */
+  private released(issue: number): Door[] {
+    sessionStorage.setItem(this.releasedKey(issue), "1");
+    this.refreshCounts();
+    const unlocked: Door[] = [];
+    for (const d of this.world.doors) {
+      if (d.locked?.by !== issue) continue;
+      unlocked.push({ ...d });
+      delete d.locked;
+      this.rebuildDoor(d);
+      this.hud.onDoorUnlocked(
+        d,
+        `${areaLabel(this.world, d.from)} → ${areaLabel(this.world, d.to)}`,
+      );
+    }
+    for (const p of this.world.hub.portals) {
+      if (p.locked?.by !== issue) continue;
+      unlocked.push({ ...p });
+      delete p.locked;
+      this.rebuildDoor(p);
+      this.hud.onDoorUnlocked(p, `Hub → ${areaLabel(this.world, p.to)}`);
+    }
+    const region = findPlacement(this.world, issue)?.region;
+    if (region && this.counts(region.id).reviewed === region.placements.length) {
+      if (!this.completedPrompted.has(region.id)) {
+        this.completedPrompted.add(region.id);
+        this.showDone(region);
+      }
+    }
+    return unlocked;
+  }
+
+  private unreleased(issue: number, doors: Door[]): void {
+    sessionStorage.removeItem(this.releasedKey(issue));
+    this.refreshCounts();
+    for (const was of doors) {
+      const d =
+        this.world.doors.find((x) => x.id === was.id) ??
+        this.world.hub.portals.find((x) => x.id === was.id);
+      if (!d || !was.locked) continue;
+      d.locked = was.locked;
+      this.rebuildDoor(d);
+    }
+  }
+
+  /** Swap the door's meshes in place when its lock changes. */
+  private rebuildDoor(door: Door): void {
+    const built = this.built;
+    if (!built) return;
+    const i = built.doors.findIndex((h) => h.door.id === door.id);
+    if (i < 0) return;
+    const old = built.doors[i] as DoorHandle;
+    old.group.removeFromParent();
+    if (old.light) built.lights = built.lights.filter((l) => l !== old.light);
+    const fresh = buildDoor(door, this.world, built.area.biome.palette.accent, built.lib);
+    built.group.add(fresh.group);
+    built.doors[i] = fresh;
+    if (fresh.light) built.lights.push(fresh.light);
+  }
+
+  /** The hourglass walk ends at the region's portal to the hub, else its entrance. */
+  private regionExit(issue: number): Vec3 | null {
+    const found = findPlacement(this.world, issue);
+    if (!found) return null;
+    const portal = this.world.doors.find((d) => d.from === found.region.id && d.to === HUB_ID);
+    return portal?.position ?? found.region.entrance;
   }
 
   // ---- edges --------------------------------------------------------------------
@@ -377,6 +573,23 @@ export class Game {
   // ---- debug api ----------------------------------------------------------------
 
   private installDebug(): void {
+    // Stand 2 m in front of the NPC (it faces the region centre) and look at its chest.
+    const standBy = (issue: number): Placement | null => {
+      const found = findPlacement(this.world, issue);
+      if (!found) return null;
+      if (this.built?.area.id !== found.region.id) this.travel(found.region.id, false);
+      const p = found.placement.position;
+      const h = this.built?.npcs.get(issue);
+      const r = h?.group.rotation.y ?? Math.PI;
+      const fx = -Math.sin(r);
+      const fz = -Math.cos(r);
+      const dist = Math.min(TALK_DISTANCE - 0.1, 1.4 + 0.8 * found.placement.scale);
+      this.player.teleport([p[0] + fx * dist, 0, p[2] + fz * dist], r + Math.PI);
+      this.player.pitch = found.placement.form === "shade" ? 0.02 : -0.12;
+      this.nearest = found.placement;
+      this.hud.setPrompt(found.placement);
+      return found.placement;
+    };
     const api: TriageDebug = {
       teleport: (id) => this.travel(id, false),
       lookAt: (issue) => {
@@ -395,6 +608,31 @@ export class Game {
       openMap: () => this.openMap(),
       closeMap: () => this.map.hide(),
       talk: (issue) => this.talk(issue),
+      openSatchel: () => this.openSatchel(),
+      closeSatchel: () => this.satchel.hide(),
+      selectToken: (name) => void this.satchel.select(name, this.world.labelSet ?? []),
+      give: (issue) => {
+        const p = standBy(issue);
+        const token = this.satchel.selectedMeta;
+        if (!p || !token) return false;
+        return this.verbs.begin(
+          { type: "label-add", issue, payload: { label: token.name } },
+          "debug",
+        );
+      },
+      take: (issue) => {
+        if (standBy(issue)) this.verbs.openRadial(issue);
+      },
+      startHold: (action) => {
+        standBy(action.issue);
+        return this.verbs.begin(action, "debug");
+      },
+      releaseHold: () => this.verbs.cancel(),
+      simulateLive: (on) => {
+        this.api.simulateLive = on;
+        this.hud.setMode(on ? "live" : this.api.mode, this.api.offline && !on);
+      },
+      api: this.api,
       world: this.world,
     };
     (window as unknown as { __triage: TriageDebug }).__triage = api;

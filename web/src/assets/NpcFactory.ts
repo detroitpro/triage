@@ -1,7 +1,8 @@
 import * as THREE from "three";
-import type { NpcForm } from "../../../src/world/types.ts";
+import type { LabelMeta, NpcForm } from "../../../src/world/types.ts";
+import { contextLabel, labelColor, type TokenShape, tokenShape } from "../pure/satchel.ts";
 import type { MaterialLibrary, MaterialRole } from "./MaterialLibrary.ts";
-import { geo } from "./WorldPropKit.ts";
+import { geo, merged } from "./WorldPropKit.ts";
 
 /**
  * Four authored silhouettes. Each body is ~1.6-2.0 units tall before scaling, faces -Z,
@@ -16,9 +17,10 @@ export interface NpcBody {
   labelHeight: number;
   /** Floating forms hover; their base height is animated instead of bobbing in place. */
   floats: boolean;
+  form: NpcForm;
 }
 
-type Builder = (lib: MaterialLibrary) => NpcBody;
+type Builder = (lib: MaterialLibrary) => Omit<NpcBody, "form">;
 
 function mesh(
   key: string,
@@ -370,7 +372,7 @@ const shade: Builder = (lib) => {
 const BUILDERS: Record<NpcForm, Builder> = { creature, villager, worker, shade };
 
 export function buildNpcBody(form: NpcForm, lib: MaterialLibrary): NpcBody {
-  return (BUILDERS[form] ?? villager)(lib);
+  return { ...(BUILDERS[form] ?? villager)(lib), form };
 }
 
 /** Idle motion per form; `t` is seconds, `phase` 0..1 per NPC. */
@@ -406,5 +408,210 @@ export function animateNpcBody(body: NpcBody, form: NpcForm, t: number, phase: n
       if (j.armL) j.armL.rotation.x = -0.5 + Math.sin(w * 0.7) * 0.15;
       if (j.armR) j.armR.rotation.x = -0.5 + Math.cos(w * 0.7) * 0.15;
       break;
+  }
+}
+
+// ---- badges ---------------------------------------------------------------------------
+//
+// Every NPC wears its labels: small shaped badges stacked in rows on the chest, a ribbon
+// around the hat or head for the first `context:*` label, and a tabard (collar, yoke or
+// sash per form) tinted with that label's colour. Ghost badges are translucent wireframes:
+// the dry-run / pending state. Materials are cached per colour and marked shared so
+// disposeArea leaves them alone.
+
+interface BadgeRig {
+  /** Centre of the badge block in the body joint's space; badges face -Z. */
+  chest: [number, number, number];
+  cols: number;
+  /** Ribbon around the hat/head, in the head joint's space. */
+  band: { y: number; r: number; h: number };
+  /** Tabard panel or collar in body space: [x, y, z, w, h, d]. */
+  tabard: [number, number, number, number, number, number];
+}
+
+const RIGS: Record<NpcForm, BadgeRig> = {
+  creature: {
+    chest: [0, -0.02, -0.57],
+    cols: 2,
+    band: { y: 0.2, r: 0.42, h: 0.07 },
+    tabard: [0, 0.3, -0.12, 0.9, 0.12, 0.9],
+  },
+  villager: {
+    chest: [0, 0.62, -0.43],
+    cols: 3,
+    band: { y: 0.4, r: 0.29, h: 0.08 },
+    tabard: [0, 0.5, -0.39, 0.5, 0.42, 0.05],
+  },
+  worker: {
+    chest: [0, 0.8, -0.33],
+    cols: 3,
+    band: { y: 0.33, r: 0.335, h: 0.06 },
+    tabard: [0, 0.9, 0, 0.82, 0.1, 0.54],
+  },
+  shade: {
+    chest: [0, 0.72, -0.38],
+    cols: 2,
+    band: { y: 0.0, r: 0.34, h: 0.06 },
+    tabard: [0, 0.55, 0, 0.74, 0.1, 0.74],
+  },
+};
+
+const BADGE_W = 0.2;
+const BADGE_H = 0.13;
+const BADGE_GAP = 0.04;
+
+const badgeMaterials = new Map<string, THREE.Material>();
+
+function badgeMaterial(color: string, ghost: boolean): THREE.Material {
+  const key = `${color}:${ghost ? "ghost" : "solid"}`;
+  let m = badgeMaterials.get(key);
+  if (!m) {
+    m = ghost
+      ? new THREE.MeshBasicMaterial({
+          color,
+          wireframe: true,
+          transparent: true,
+          opacity: 0.75,
+          depthWrite: false,
+        })
+      : new THREE.MeshStandardMaterial({
+          color,
+          emissive: color,
+          emissiveIntensity: 0.45,
+          roughness: 0.55,
+          metalness: 0.1,
+          flatShading: true,
+        });
+    m.userData.shared = true;
+    badgeMaterials.set(key, m);
+  }
+  return m;
+}
+
+/** Badges face -Z (the NPC's front); CircleGeometry faces +Z, so flat shapes are turned. */
+function badgeGeometry(shape: TokenShape): THREE.BufferGeometry {
+  switch (shape) {
+    case "crest":
+      return geo("badge.crest", () =>
+        new THREE.CircleGeometry(BADGE_H * 0.78, 5).rotateZ(-Math.PI / 2).rotateY(Math.PI),
+      );
+    case "gear":
+    case "wrench":
+      return geo("badge.octo", () => new THREE.CircleGeometry(BADGE_H * 0.72, 8).rotateY(Math.PI));
+    case "stopwatch":
+    case "lantern":
+      return geo("badge.round", () =>
+        new THREE.CircleGeometry(BADGE_H * 0.68, 12).rotateY(Math.PI),
+      );
+    case "hourglass":
+      return geo("badge.hourglass", () =>
+        merged([
+          new THREE.CircleGeometry(BADGE_H * 0.5, 3).rotateZ(Math.PI / 2).translate(0, 0.05, 0),
+          new THREE.CircleGeometry(BADGE_H * 0.5, 3).rotateZ(-Math.PI / 2).translate(0, -0.05, 0),
+        ]).rotateY(Math.PI),
+      );
+    default:
+      return geo("badge.tag", () => new THREE.BoxGeometry(BADGE_W, BADGE_H, 0.03));
+  }
+}
+
+function badgesGroup(body: NpcBody): THREE.Group {
+  const existing = body.root.userData.badges as THREE.Group | undefined;
+  if (existing) {
+    existing.clear();
+    (existing.userData.ribbon as THREE.Object3D | undefined)?.removeFromParent();
+    existing.userData.ribbon = undefined;
+    return existing;
+  }
+  const g = new THREE.Group();
+  g.name = "badges";
+  body.root.userData.badges = g;
+  (body.joints.body ?? body.root).add(g);
+  return g;
+}
+
+/** Labels currently rendered on the body (solid then ghost), for callers that re-render. */
+export function badgeLabels(body: NpcBody): { solid: string[]; ghost: string[] } {
+  const g = body.root.userData.badges as THREE.Group | undefined;
+  const state = g?.userData.labels as { solid: string[]; ghost: string[] } | undefined;
+  return state ?? { solid: [], ghost: [] };
+}
+
+/**
+ * Dress the NPC. `labels` render solid, `ghostLabels` translucent (pending or practice).
+ * Rebuilds the badge block each call; cheap enough for a handful of labels.
+ */
+export function setBadges(
+  body: NpcBody,
+  labels: readonly string[],
+  labelSet: readonly LabelMeta[],
+  ghostLabels: readonly string[] = [],
+): void {
+  const rig = RIGS[body.form] ?? RIGS.villager;
+  const group = badgesGroup(body);
+  group.userData.labels = { solid: [...labels], ghost: [...ghostLabels] };
+  const all: { name: string; ghost: boolean }[] = [
+    ...labels.map((name) => ({ name, ghost: false })),
+    ...ghostLabels.filter((l) => !labels.includes(l)).map((name) => ({ name, ghost: true })),
+  ];
+  // Chest block: rows of `cols`, centred, top row first.
+  const cols = rig.cols;
+  const rows = Math.ceil(all.length / cols);
+  const [cx, cy, cz] = rig.chest;
+  all.forEach((b, i) => {
+    const row = Math.floor(i / cols);
+    const inRow = Math.min(cols, all.length - row * cols);
+    const col = i % cols;
+    const x = cx + (col - (inRow - 1) / 2) * (BADGE_W + BADGE_GAP);
+    const y = cy + ((rows - 1) / 2 - row) * (BADGE_H + BADGE_GAP);
+    const color = labelColor(labelSet, b.name);
+    const shape = tokenShape(b.name);
+    // Dark backing plate for contrast at distance; the badge sits a hair in front.
+    const plate = new THREE.Mesh(
+      geo("badge.plate", () => new THREE.BoxGeometry(BADGE_W + 0.04, BADGE_H + 0.04, 0.02)),
+      b.ghost ? badgeMaterial("#000000", true) : badgeMaterial("#14181f", false),
+    );
+    plate.position.set(x, y, cz + 0.02);
+    plate.castShadow = false;
+    const badge = new THREE.Mesh(badgeGeometry(shape), badgeMaterial(color, b.ghost));
+    badge.position.set(x, y, cz - 0.01);
+    badge.castShadow = false;
+    badge.name = `badge:${b.name}`;
+    badge.userData.label = b.name;
+    badge.userData.ghost = b.ghost;
+    group.add(plate, badge);
+  });
+  // Context label: ribbon on the hat and a tinted tabard.
+  const ctx = contextLabel([...labels, ...ghostLabels]);
+  const head = body.joints.head;
+  if (ctx) {
+    const ghost = !labels.includes(ctx);
+    const color = labelColor(labelSet, ctx);
+    const mat = badgeMaterial(color, ghost);
+    const band = new THREE.Mesh(
+      geo(
+        `badge.band.${body.form}`,
+        () => new THREE.CylinderGeometry(rig.band.r, rig.band.r, rig.band.h, 12, 1, true),
+      ),
+      mat,
+    );
+    band.position.y = rig.band.y;
+    band.castShadow = false;
+    band.name = "ribbon";
+    // Ribbons live in head space; parent them there but track them from the badge group.
+    const ribbonHolder = new THREE.Group();
+    ribbonHolder.name = "ribbonHolder";
+    ribbonHolder.add(band);
+    (head ?? group).add(ribbonHolder);
+    group.userData.ribbon = ribbonHolder;
+    const [tx, ty, tz, tw, th, td] = rig.tabard;
+    const tabard = new THREE.Mesh(
+      geo(`badge.tabard.${body.form}`, () => new THREE.BoxGeometry(tw, th, td)),
+      mat,
+    );
+    tabard.position.set(tx, ty, tz);
+    tabard.castShadow = false;
+    tabard.name = "tabard";
+    group.add(tabard);
   }
 }

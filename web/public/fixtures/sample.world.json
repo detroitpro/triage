@@ -87,7 +87,7 @@
           "title": "Login button does nothing on Safari",
           "url": "https://github.com/example/sample/issues/3",
           "summary": "Clicking Sign in on Safari 17 shows a spinner and then nothing. Works in Chrome. Console shows a CORS warning on /session.",
-          "labels": ["bug", "browser"],
+          "labels": ["bug", "browser", "context:analysis", "app:web"],
           "position": [40, 0, -6],
           "scale": 1.2,
           "form": "creature",
@@ -133,7 +133,7 @@
           "title": "Session cookie not marked SameSite",
           "url": "https://github.com/example/sample/issues/7",
           "summary": "The session cookie is set without SameSite, so modern browsers log a warning and some drop it.",
-          "labels": ["bug"],
+          "labels": ["bug", "feature:sessions"],
           "position": [48, 0, 2],
           "scale": 1.5,
           "form": "creature",
@@ -179,7 +179,7 @@
           "title": "Remember me checkbox",
           "url": "https://github.com/example/sample/issues/9",
           "summary": "Add a remember-me checkbox that extends the session to 30 days.",
-          "labels": ["enhancement"],
+          "labels": ["enhancement", "later"],
           "position": [58, 0, -8],
           "scale": 1,
           "form": "creature",
@@ -219,7 +219,7 @@
           "title": "Password reset email goes to spam",
           "url": "https://github.com/example/sample/issues/14",
           "summary": "A few users report that reset emails land in spam. Probably missing SPF record on the sending domain.",
-          "labels": ["question"],
+          "labels": ["question", "needs-info"],
           "position": [62, 0, 8],
           "scale": 1,
           "form": "creature",
@@ -324,7 +324,7 @@
           "title": "Invoice totals off by one cent",
           "url": "https://github.com/example/sample/issues/21",
           "summary": "Rounding happens per line and again on the total. Totals drift by a cent on invoices with many lines.",
-          "labels": ["bug", "money"],
+          "labels": ["bug", "money", "context:design", "performance"],
           "position": [-46, 0, -6],
           "scale": 1.3,
           "form": "villager",
@@ -376,7 +376,7 @@
           "title": "Use integer cents everywhere",
           "url": "https://github.com/example/sample/issues/22",
           "summary": "Store and compute money as integer cents instead of floats.",
-          "labels": ["tech-debt"],
+          "labels": ["tech-debt", "infra"],
           "position": [-56, 0, 4],
           "scale": 1,
           "form": "villager",
@@ -535,7 +535,7 @@
           "title": "API tokens logged in plain text",
           "url": "https://github.com/example/sample/issues/12",
           "summary": "Request logging includes the Authorization header. Tokens end up in the log aggregator.",
-          "labels": ["security", "bug"],
+          "labels": ["security", "bug", "platform:linux"],
           "position": [-8, 0, 44],
           "scale": 1.8,
           "form": "shade",
@@ -581,7 +581,7 @@
           "title": "Rotate tokens on password change",
           "url": "https://github.com/example/sample/issues/41",
           "summary": "Changing a password should invalidate every existing API token for that user.",
-          "labels": ["security"],
+          "labels": ["security", "context:analysis"],
           "position": [10, 0, 50],
           "scale": 1.1,
           "form": "shade",
@@ -707,6 +707,110 @@
       "position": [-52, 0, 13],
       "facing": 0,
       "edgeType": "user-journey"
+    }
+  ],
+  "labelSet": [
+    {
+      "name": "context:analysis",
+      "color": "0e8a16",
+      "description": "Needs analysis before anyone writes code",
+      "count": 2
+    },
+    {
+      "name": "context:design",
+      "color": "5319e7",
+      "description": "A design decision is open",
+      "count": 1
+    },
+    {
+      "name": "app:web",
+      "color": "1d76db",
+      "description": "The browser client",
+      "count": 1
+    },
+    {
+      "name": "platform:linux",
+      "color": "6e5494",
+      "description": "Linux hosts only",
+      "count": 1
+    },
+    {
+      "name": "feature:sessions",
+      "color": "fbca04",
+      "description": "Sign-in and session lifetime",
+      "count": 1
+    },
+    {
+      "name": "performance",
+      "color": "f9a825",
+      "description": "Slow, not wrong",
+      "count": 1
+    },
+    {
+      "name": "needs-info",
+      "color": "e4e669",
+      "description": "Reporter owes us details",
+      "count": 1
+    },
+    {
+      "name": "later",
+      "color": "bfd4f2",
+      "description": "Not this cycle",
+      "count": 1
+    },
+    {
+      "name": "infra",
+      "color": "c2e0c6",
+      "description": "Build, deploy, hosting",
+      "count": 1
+    },
+    {
+      "name": "bug",
+      "color": "d73a4a",
+      "description": "Something is broken",
+      "count": 5
+    },
+    {
+      "name": "enhancement",
+      "color": "a2eeef",
+      "description": "New behaviour",
+      "count": 2
+    },
+    {
+      "name": "question",
+      "color": "d876e3",
+      "description": "Asking, not reporting",
+      "count": 1
+    },
+    {
+      "name": "chore",
+      "color": "cfd3d7",
+      "description": "Tidying without user-visible change",
+      "count": 1
+    },
+    {
+      "name": "tech-debt",
+      "color": "8b572a",
+      "description": "Known shortcut to pay back",
+      "count": 1
+    },
+    {
+      "name": "security",
+      "color": "b60205",
+      "description": "Confidentiality, integrity or availability",
+      "count": 2
+    },
+    {
+      "name": "money",
+      "color": "0052cc",
+      "description": "Touches billing or invoices",
+      "count": 1
+    },
+    {
+      "name": "browser",
+      "color": "bfdadc",
+      "description": "Specific to one browser",
+      "count": 1
     }
   ]
 }

@@ -1,7 +1,7 @@
 import * as THREE from "three";
-import type { Biome, NpcForm, Placement } from "../../../src/world/types.ts";
+import type { Biome, LabelMeta, NpcForm, Placement } from "../../../src/world/types.ts";
 import { getMaterialLibrary, type MaterialLibrary } from "../assets/MaterialLibrary.ts";
-import { animateNpcBody, buildNpcBody, type NpcBody } from "../assets/NpcFactory.ts";
+import { animateNpcBody, buildNpcBody, type NpcBody, setBadges } from "../assets/NpcFactory.ts";
 import { geo, makeContactDisc } from "../assets/WorldPropKit.ts";
 import { truncate } from "../pure/dialogueText.ts";
 import { makeLabelSprite } from "./labels.ts";
@@ -20,6 +20,11 @@ export interface NpcHandle {
   signal: THREE.Mesh;
   form: NpcForm;
   lib: MaterialLibrary;
+  /** The authored body; badges hang off it. */
+  authored: NpcBody;
+  /** Labels rendered as ghosts (pending or practice). */
+  ghostLabels: string[];
+  practice: boolean;
 }
 
 /** When a caller only has the palette colour (legacy signature), build a stand-in biome. */
@@ -43,6 +48,7 @@ export function buildNpc(
   color: string,
   reviewed: boolean,
   lib?: MaterialLibrary,
+  labelSet: readonly LabelMeta[] = [],
 ): NpcHandle {
   const library = lib ?? getMaterialLibrary(fallbackBiome(color, p.form));
   const group = new THREE.Group();
@@ -69,6 +75,7 @@ export function buildNpc(
   const label = makeLabelSprite([`#${p.issue}`, truncate(p.title, 28)], { height: 0.9 });
   label.position.y = authored.labelHeight * p.scale + 0.45;
   group.add(label);
+  setBadges(authored, p.labels, labelSet);
   return {
     placement: p,
     group,
@@ -81,23 +88,21 @@ export function buildNpc(
     signal: authored.signal,
     form: p.form,
     lib: library,
+    authored,
+    ghostLabels: [],
+    practice: false,
   };
 }
 
+/** Re-dress the NPC from its placement labels plus any ghosts. */
+export function refreshBadges(h: NpcHandle, labelSet: readonly LabelMeta[]): void {
+  const solid = h.placement.labels.filter((l) => !h.ghostLabels.includes(l));
+  setBadges(h.authored, solid, labelSet, h.ghostLabels);
+}
+
 export function animateNpc(h: NpcHandle, t: number, reducedMotion: boolean): void {
-  if (reducedMotion) return;
-  animateNpcBody(
-    {
-      root: h.body,
-      joints: h.joints,
-      signal: h.signal,
-      labelHeight: 0,
-      floats: h.form === "shade",
-    },
-    h.form,
-    t,
-    h.phase,
-  );
+  if (reducedMotion || h.practice) return;
+  animateNpcBody(h.authored, h.form, t, h.phase);
   if (h.ring.visible) h.ring.rotation.z = t * 0.4;
 }
 

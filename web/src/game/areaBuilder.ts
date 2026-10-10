@@ -158,7 +158,7 @@ export function buildArea(
   const npcs = new Map<number, NpcHandle>();
   const center = new THREE.Vector3(bounds.x + bounds.w / 2, 0, bounds.z + bounds.d / 2);
   for (const p of area.placements) {
-    const h = buildNpc(p, biome.palette.npc, reviewed(p.issue), lib);
+    const h = buildNpc(p, biome.palette.npc, reviewed(p.issue), lib, world.labelSet ?? []);
     const dx = center.x - p.position[0];
     const dz = center.z - p.position[2];
     h.group.rotation.y = Math.atan2(-dx, -dz) + Math.PI;

@@ -10,7 +10,13 @@ stays in control and routes on the answers and their confidence.
 
 ## Status
 
-Pre-dev. See [docs/PLAN.md](docs/PLAN.md) for the path to dev-ready.
+Walking skeleton. See [docs/PLAN.md](docs/PLAN.md) for what's left before dev-ready,
+and [AGENTS.md](AGENTS.md) for commands and layout.
+
+```bash
+make secrets-unlock && make setup && make check && make smoke
+echo '{"title":"Login broken","body":"500 on /login since 9am"}' | npm run triage -- classify -
+```
 
 ## Secrets
 

@@ -24,6 +24,8 @@ make smoke            # live call to OpenRouter and Jev
 npm run triage -- run              # ingest → interrogate → classify → relate → build (data/)
 npm run triage -- <stage>          # one stage; `validate` checks graph + world invariants
 npm run dev -w web                 # three.js client on http://localhost:5173 (serves data/world/*)
+npm run server                     # local API for the client: practice mode (nothing reaches GitHub)
+npm run server -- --live           # confirmed in-game actions reach GitHub; audited in data/audit.jsonl
 ```
 
 ## Layout
@@ -38,7 +40,9 @@ npm run dev -w web                 # three.js client on http://localhost:5173 (s
 | `src/graph/` | Explicit + inferred edges, candidate pruning, analytics, lenses → `data/graph.json` |
 | `src/world/` | `biome.ts` (second review surface), `build.ts` (layout), `types.ts` (world.json contract) |
 | `src/cli.ts` | `triage ingest | interrogate | classify | relate | build | validate | run` |
-| `web/` | Vite + three.js first-person client (npm workspace) |
+| `src/writeback/gate.ts` | The one gate for GitHub mutations: dry-run default, audit, undo, idempotency |
+| `src/server/` | Local HTTP API (`docs/api.md`): status, action, undo, dialogue; keys never reach the browser |
+| `web/` | Vite + three.js first-person client (npm workspace); proxies `/api` to the server |
 | `scripts/smoke.ts` | Live round trip; `SKIP` means a key is missing |
 
 ## Rules

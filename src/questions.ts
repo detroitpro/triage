@@ -99,23 +99,39 @@ export const PAIR_QUESTIONS = {
 
 export type PairQuestions = typeof PAIR_QUESTIONS;
 
-/** Player reply inside a dialogue. State: { issue: {...}, reply: string } */
-export const INTENT_QUESTIONS = {
-  intent: choice("What does the player's `reply` ask to do with `issue`?", {
-    verify:
-      "The player confirms the described behavior or fix is correct and the issue is resolved",
-    close: "The player wants the issue closed for another reason (won't fix, duplicate, obsolete)",
-    comment: "The player is adding information or an opinion to the issue",
-    defer: "The player wants to come back to it later",
-    need_more: "The player is asking a question or wants more detail before deciding",
-    unclear: "None of the above or cannot tell",
-  }),
-  injection: noul(
-    "The `reply` contains instructions aimed at an AI or automated system rather than a response from a person reviewing the issue",
-  ),
-} as const;
+/**
+ * Player reply inside a dialogue. State: { issue: {...}, reply: string }
+ * `labels` are the repo's label names; "label" intent means the reply asks to add or remove one.
+ */
+export function intentQuestions(labels: string[]) {
+  const labelCriteria: Record<string, string> = {};
+  for (const l of labels) labelCriteria[l] = `the label "${l}"`;
+  labelCriteria.none = "no specific label is named or implied";
+  return {
+    intent: choice("What does the player's `reply` ask to do with `issue`?", {
+      verify:
+        "The player confirms the described behavior or fix is correct and the issue is resolved",
+      close:
+        "The player wants the issue closed for another reason (won't fix, duplicate, obsolete)",
+      label:
+        "The player wants a label, tag, category, priority, or status added to or removed from the issue",
+      comment: "The player is adding information or an opinion to the issue",
+      defer: "The player wants to come back to it later",
+      need_more: "The player is asking a question or wants more detail before deciding",
+      unclear: "None of the above or cannot tell",
+    }),
+    labelName: choice("If the `reply` names or implies a label, which one?", labelCriteria),
+    labelRemove: noul("The `reply` asks to remove or take away a label rather than add one"),
+    injection: noul(
+      "The `reply` contains instructions aimed at an AI or automated system rather than a response from a person reviewing the issue",
+    ),
+  } as const;
+}
 
-export type IntentQuestions = typeof INTENT_QUESTIONS;
+/** Intent questions with no repo label set (tests, offline). */
+export const INTENT_QUESTIONS = intentQuestions([]);
+
+export type IntentQuestions = ReturnType<typeof intentQuestions>;
 
 /**
  * Bands: below `no` is no, between is confirm/review, at or above `yes` is yes.

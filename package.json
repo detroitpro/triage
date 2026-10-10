@@ -14,7 +14,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit && npm run typecheck -w web",
     "lint": "biome check .",
-    "format": "biome check --write ."
+    "format": "biome check --write .",
+    "server": "tsx src/server/index.ts"
   },
   "dependencies": {
     "@typesafe-ai/sdk": "^0.6.0"

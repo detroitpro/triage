@@ -4,7 +4,7 @@ import type { GraphFile, LensAnalysis } from "../graph/types.ts";
 import { DIRECTED } from "../graph/types.ts";
 import { hash32, rng } from "../io.ts";
 import { biomeFor } from "./biome.ts";
-import type { Door, Placement, PlacementEdge, Region, Vec3, World } from "./types.ts";
+import type { Door, LabelMeta, Placement, PlacementEdge, Region, Vec3, World } from "./types.ts";
 
 const DOOR_PRIORITY: Door["edgeType"][] = [
   "blocks",
@@ -33,7 +33,18 @@ function placeInRegion(issue: number, region: Region["bounds"]): Vec3 {
 
 const round = (v: number) => Math.round(v * 100) / 100;
 
-export function buildWorld(graph: GraphFile, lens: string, lenses: string[]): World {
+export interface LabelSource {
+  name: string;
+  color: string;
+  description: string;
+}
+
+export function buildWorld(
+  graph: GraphFile,
+  lens: string,
+  lenses: string[],
+  labels: LabelSource[] = [],
+): World {
   const analysis = graph.lenses[lens];
   if (!analysis) throw new Error(`no analysis for lens ${lens}`);
   const byId = new Map(graph.nodes.map((n) => [n.number, n]));
@@ -169,7 +180,20 @@ export function buildWorld(graph: GraphFile, lens: string, lenses: string[]): Wo
     hub: { id: "hub", bounds: hubBounds, spawn: [0, 0, 8], portals },
     regions,
     doors: doors.sort((a, b) => a.id.localeCompare(b.id)),
+    labelSet: labelSetFor(graph.nodes, labels),
   };
+}
+
+/** Every repo label as a token, with how many open issues wear it. Unknown labels on issues are added. */
+export function labelSetFor(nodes: ClassifiedIssue[], labels: LabelSource[]): LabelMeta[] {
+  const counts = new Map<string, number>();
+  for (const n of nodes) for (const l of n.labels) counts.set(l, (counts.get(l) ?? 0) + 1);
+  const out = new Map<string, LabelMeta>();
+  for (const l of labels) out.set(l.name, { ...l, count: counts.get(l.name) ?? 0 });
+  for (const [name, count] of counts) {
+    if (!out.has(name)) out.set(name, { name, color: "9e9e9e", description: "", count });
+  }
+  return [...out.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 function doorBetween(

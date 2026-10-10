@@ -103,6 +103,16 @@ export interface Hub {
   portals: Door[];
 }
 
+/** A repo label as an inventory token. */
+export interface LabelMeta {
+  name: string;
+  /** Hex without '#', as GitHub returns it. */
+  color: string;
+  description: string;
+  /** Open issues wearing it. */
+  count: number;
+}
+
 export interface World {
   version: 1;
   repo: string;
@@ -113,4 +123,6 @@ export interface World {
   hub: Hub;
   regions: Region[];
   doors: Door[];
+  /** The satchel: every label in the repo. */
+  labelSet: LabelMeta[];
 }

@@ -193,8 +193,11 @@ This function is the second review surface. Change feel here, not in the client.
 2. Every live action is shown in game and confirmed before it runs.
 3. Closing requires the intent to be `verify` or `close` with confidence above
    the threshold in `src/questions.ts`, plus confirmation.
-4. Every action is appended to `data/audit.jsonl` with the issue, action, text,
-   and timestamp. Undo reopens or deletes the comment.
+4. Every action is appended to `data/audit.jsonl` as one JSON line per state change:
+   `{ id, at, mode, repo, issue, type, payload, outcome, handle?, error? }` with `outcome`
+   one of `pending`, `applied`, `dry-run`, `failed`, `undone`; undo lines have
+   `type: "undo"` and `payload.undoOf`. Undo reopens, deletes the comment, or reverses the label
+   using the `handle` recorded on the applied line.
 5. Comments are posted as the token's user and are prefixed so they are
    recognizable as coming from this tool.
 

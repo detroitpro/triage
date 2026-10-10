@@ -5,7 +5,7 @@ import { loadDotEnv } from "./env.ts";
 import { LENSES } from "./graph/lenses.ts";
 import { relate } from "./graph/relate.ts";
 import { type GraphFile, validateGraph } from "./graph/types.ts";
-import { fetchIssues } from "./ingest/github.ts";
+import { fetchIssues, fetchLabels, type RepoLabel } from "./ingest/github.ts";
 import type { IssuesFile } from "./ingest/types.ts";
 import { type AreasFile, interrogate } from "./interrogate/index.ts";
 import { dataPath, readData, writeData } from "./io.ts";
@@ -43,8 +43,10 @@ function need(name: string): string {
 
 async function ingest(): Promise<void> {
   const repo = need("TRIAGE_REPO");
-  const file = await fetchIssues(repo, { token: githubToken(), log });
+  const token = githubToken();
+  const file = await fetchIssues(repo, { token, log });
   writeData(dataPath("issues.json"), file);
+  writeData(dataPath("labels.json"), await fetchLabels(repo, { token, log }));
   log(`wrote data/issues.json (${file.issues.length} issues)`);
 }
 
@@ -86,8 +88,11 @@ async function doRelate(args: string[]): Promise<void> {
 
 function build(): void {
   const graph = readData<GraphFile>(dataPath("graph.json"));
+  const labels = existsSync(dataPath("labels.json"))
+    ? readData<RepoLabel[]>(dataPath("labels.json"))
+    : [];
   for (const lens of LENSES) {
-    const world = buildWorld(graph, lens, [...LENSES]);
+    const world = buildWorld(graph, lens, [...LENSES], labels);
     const errors = validateWorld(world);
     if (errors.length)
       log(`${lens}: ${errors.length} world problems\n  ${errors.slice(0, 10).join("\n  ")}`);

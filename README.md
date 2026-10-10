@@ -19,8 +19,13 @@ Charter and guideposts: [docs/CHARTER.md](docs/CHARTER.md). Commands and layout:
 make secrets-unlock && make setup && make check
 # .env: TRIAGE_REPO=owner/repo  TRIAGE_REPO_PATH=/local/clone
 npm run triage -- run          # data/issues.json → areas → classified → graph → world/*.world.json
+npm run server                 # local API in practice mode (add -- --live to let confirmed actions reach GitHub)
 npm run dev -w web             # walk it at http://localhost:5173
 ```
+
+In the world: **E** talk, **I** satchel (labels as tokens), **G** give a token, **T** take a badge,
+**R** rewind the last live action, **Tab** map, **H** help. Live actions need a held key to confirm;
+practice mode shows them as ghosts.
 
 Screenshots from the checked-in fixture world (`web/public/fixtures/sample.world.json`):
 
@@ -43,6 +48,8 @@ Never commit secrets. This repo is public.
 |----------|---------|
 | `OPENROUTER_API_KEY` | LLM calls via OpenRouter |
 | `TYPESAFE_API_KEY` | Jev System One API (`https://api.typesafe.ai/v1/systemone`) |
+| `GITHUB_TOKEN` | Reads issues; in `--live` mode also comments, labels, closes (`repo` scope). Falls back to `gh auth token` |
+| `TRIAGE_REPO`, `TRIAGE_REPO_PATH` | Target repository and its local clone |
 
 Local values live in `.env` (gitignored), materialized from the `triage`
 secrets project. Copy `.env.example` for the key list.

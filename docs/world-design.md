@@ -71,6 +71,40 @@ NPC forms are authored silhouettes recognizable as dark shapes: creature (round 
 feet, tail), villager (body, head, hat, apron, satchel), worker (helmet, visor, vest, tool),
 shade (cloak, hood, glowing eyes, floating). Scale from centrality.
 
+## Interaction contract (decided 2026-10-10)
+
+The game must not recreate the GitHub page. Every GitHub verb has a physical verb, a
+visible state on the NPC, and immediate feedback. There is no "manage issue" menu.
+
+| GitHub verb | Physical verb | Visible state | Feedback |
+|-------------|---------------|---------------|----------|
+| add label | **give** a token from the satchel (I) | badge on the NPC's body, tabard color for the context | badge snaps on, banner, sound |
+| remove label | **take** a badge off the NPC | badge gone, token back in the satchel | badge detaches |
+| comment | **say** it: reply, then choose "Say it" on the choice wheel | speech bubble marked as posted | bubble seals |
+| close (completed) | **release**: verify, NPC bows out | NPC leaves, counter ticks, doors unlock | region banner |
+| close (not planned) | **send through the hourglass door** | NPC walks out | banner |
+| close (duplicate) | **lead** to the twin, they merge | one NPC remains | merge animation |
+| blocked by | **chain** to another NPC (C) | chain between them, locked door | chain sound |
+| assign | **recruit**: banner with the login; self-assign makes them follow | banner | — |
+| milestone | **send to camp**: campfire per milestone | NPC sits at the camp | — |
+
+Rules the playtester agent checks:
+
+1. Physical verb, visible state, instant feedback: the NPC changes within 100 ms of the action.
+2. Commit by holding, not by modal: a hold-to-confirm ring around the reticle names the action;
+   releasing early cancels. This is the charter's confirmation step.
+3. Undo is an item: a rewind token appears for 30 s after any live action and reverses it
+   through the audit log.
+4. Dry run is visible: without `--live`, badges, chains, and seals render as ghosts and the HUD
+   shows a "practice" tag. A region can be rehearsed end to end.
+5. Text is a fallback: free-form replies stay, but anything that is really a verb is
+   interpreted by Jev and offered as the physical action instead of posted as prose.
+
+Satchel: the repo's labels as tokens. Shape from the namespace (`context:` crest, `app:` tool,
+`platform:` gear, `feature:` scroll, `performance` stopwatch, `needs-info` lantern, `later`
+hourglass, `infra` wrench, otherwise a plain tag), color from the GitHub label color, lore
+text from the label description, count from how many open issues wear it. Unused tokens are dim.
+
 ## Scorecard (fixture world, 2026-10-10)
 
 Genre equivalents: Hero = the NPCs (what you look at and approach); Obstacles = locked doors

@@ -82,6 +82,22 @@ export function extractRefs(text: string, self: number): number[] {
   return [...seen];
 }
 
+export interface RepoLabel {
+  name: string;
+  color: string;
+  description: string;
+}
+
+export async function fetchLabels(repo: string, opts: GitHubOptions): Promise<RepoLabel[]> {
+  const raw = await getAll<{ name: string; color: string; description: string | null }>(
+    `${API}/repos/${repo}/labels?per_page=100`,
+    opts,
+  );
+  return raw
+    .map((l) => ({ name: l.name, color: l.color, description: l.description ?? "" }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export async function fetchIssues(repo: string, opts: GitHubOptions): Promise<IssuesFile> {
   const log = opts.log ?? (() => {});
   const base = `${API}/repos/${repo}/issues?per_page=100`;

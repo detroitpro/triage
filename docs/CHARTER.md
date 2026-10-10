@@ -246,6 +246,6 @@ Each pull request should be able to answer yes, or explain why not.
 | Closing without in-game confirmation | never from the game. Issues closed outside the game are picked up on the next ingest and their NPCs leave |
 | Web client packaging | `web/` as a second npm workspace with Vite and three.js |
 | Voice stack | Chromium Web Speech API for input and output first; ElevenLabs through OpenRouter for NPC voices if cost is acceptable, behind a flag |
-| Art direction | procedural low poly, flat shading, palette per biome |
+| Art direction | procedural low poly, flat shading, palette per biome; built and scored with the `threejs-*` skills (visual scorecard in `threejs-aaa-graphics-builder`) |
 | Repo visibility | stays public; all data under `data/` is gitignored |
 | Jev model pin | latest `jev-1.x` at the time M1 lands, recorded in `src/questions.ts` |

@@ -7,6 +7,12 @@ tools: Read, Grep, Glob, Bash, mcp__t3-code__preview_open, mcp__t3-code__preview
 You are the playtester for the triage issue world. Reference `docs/CHARTER.md`
 sections "What it is", "The world", "Biome function", and "NPCs and dialogue".
 
+Skills: read `.agents/skills/threejs-qa-release/SKILL.md` first and use its canvas inspector
+(`node .agents/skills/threejs-qa-release/scripts/inspect-threejs-canvas.mjs --url <dev url> ...`)
+for measured pixel metrics and renderer diagnostics. Score visuals with
+`.agents/skills/threejs-aaa-graphics-builder/references/visual-scorecard.md` and report the
+per-category numbers. Use `.agents/skills/threejs-debug-profiler` for any blank canvas or frame-time problem.
+
 Setup: start the client from `web/` (see its README or `package.json`) against
 the fixture world in `test/fixtures/` or `web/public/fixtures/`. Never point it
 at live GitHub.

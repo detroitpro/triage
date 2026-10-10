@@ -49,3 +49,4 @@ npm run dev -w web                 # three.js client on http://localhost:5173 (s
 4. Run `make check` before committing.
 5. Pipeline outputs live under `data/` (gitignored). Never commit them.
 6. Before a PR: run `charter-check` and `qa-reviewer`; `graph-auditor` for data-model changes, `playtester` for `web/`, `writeback-safety` for anything that can mutate GitHub.
+7. Any work under `web/` goes through the `threejs-*` skills (`.agents/skills/`): `threejs-game-director` to scope, `threejs-gameplay-systems` for controls/camera/feel, `threejs-aaa-graphics-builder` for visuals (score with its 10-category scorecard), `threejs-game-ui-designer` for HUD and menus, `threejs-debug-profiler` for bugs and budgets, `threejs-qa-release` for evidence (`scripts/inspect-threejs-canvas.mjs`). Art direction stays procedural low poly (charter); the generator skills need `TRIPO_API_KEY`, `GEMINI_API_KEY`, or `ELEVENLABS_API_KEY` and are opt-in.

@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="en">
   <head>
+    <link rel="icon" href="data:," />
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>triage: issue world</title>
@@ -9,31 +10,61 @@
   <body>
     <canvas id="view"></canvas>
     <div id="hud">
-      <div id="hud-top-left"><div id="hud-region">loading…</div><div id="hud-lens"></div></div>
-      <div id="hud-top-right"><div id="hud-region-count"></div><div id="hud-world-count"></div></div>
-      <canvas id="minimap" width="220" height="170"></canvas>
-      <div id="crosshair"></div>
-      <div id="hud-prompt"></div>
-      <div id="hud-hint">click to play · H help · Tab map · P settings</div>
-      <button id="gear" type="button" title="Settings (P)">⚙</button>
+      <!-- status: where am I -->
+      <div id="hud-status" class="cluster">
+        <div class="status-row">
+          <svg id="hud-biome-glyph" class="glyph" viewBox="0 0 24 24" aria-hidden="true"></svg>
+          <div class="status-text">
+            <div id="hud-region">loading…</div>
+            <div class="status-sub"><span id="hud-biome"></span><span id="hud-lens" class="tag"></span></div>
+          </div>
+        </div>
+        <!-- objective: region progress -->
+        <div id="hud-objective">
+          <div class="meter-row">
+            <span class="meter-label">Region</span>
+            <div class="meter"><div id="hud-region-fill" class="meter-fill"></div><div class="meter-ticks"></div></div>
+            <span id="hud-region-count" class="num">0<i>/</i>0</span>
+            <span id="hud-region-left" class="left"></span>
+          </div>
+          <div class="meter-row world">
+            <span class="meter-label">World</span>
+            <div class="meter"><div id="hud-world-fill" class="meter-fill"></div></div>
+            <span id="hud-world-count" class="num">0<i>/</i>0</span>
+          </div>
+        </div>
+      </div>
+      <!-- compass strip -->
+      <div id="hud-compass"><canvas id="compass"></canvas></div>
+      <!-- feedback: event banner -->
+      <div id="hud-banner" class="banner" aria-live="polite"></div>
+      <!-- reticle -->
+      <div id="crosshair" class="reticle"><i class="t"></i><i class="r"></i><i class="b"></i><i class="l"></i><i class="dot"></i></div>
+      <!-- near-world prompt -->
+      <div id="hud-prompt"><span class="keycap prompt-key">E</span><span class="prompt-body"><b id="prompt-issue"></b><span id="prompt-title"></span></span></div>
+      <!-- minimap -->
+      <div id="hud-minimap" class="mapframe"><canvas id="minimap" width="240" height="180"></canvas><span class="north">N</span><span id="minimap-caption" class="caption"></span></div>
+      <!-- flavor: keys -->
+      <div id="hud-hint"><span id="hint-play" class="hint-play">click to play</span><span class="keycap">H</span>help<span class="keycap">Tab</span>map<span class="keycap">P</span>settings</div>
+      <button id="gear" type="button" title="Settings (P)" aria-label="Settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm8.1 3.5c0-.5 0-1-.1-1.4l2-1.6-2-3.4-2.4 1a8 8 0 0 0-2.4-1.4L14.8 2H9.2l-.4 2.7A8 8 0 0 0 6.4 6.1L4 5.1 2 8.5l2 1.6a8.6 8.6 0 0 0 0 2.8l-2 1.6 2 3.4 2.4-1a8 8 0 0 0 2.4 1.4l.4 2.7h5.6l.4-2.7a8 8 0 0 0 2.4-1.4l2.4 1 2-3.4-2-1.6c.1-.4.1-.9.1-1.4Z"/></svg></button>
     </div>
     <div id="fade"></div>
     <div id="help" class="overlay hidden">
       <div class="panel">
         <h2>Controls</h2>
-        <ul>
-          <li><b>Click</b> capture the mouse, <b>Esc</b> release</li>
-          <li><b>W A S D</b> move, <b>mouse</b> look, <b>Shift</b> sprint, <b>Space</b> jump</li>
-          <li><b>E</b> talk to the nearest issue</li>
-          <li><b>Tab</b> map screen and lens switcher</li>
-          <li><b>P</b> settings, <b>H</b> this help</li>
-          <li>Walk into a door or portal to travel. Red doors are locked by an issue.</li>
+        <ul class="keys">
+          <li><span class="keycap">Click</span> capture the mouse <span class="keycap">Esc</span> release</li>
+          <li><span class="keycap">W</span><span class="keycap">A</span><span class="keycap">S</span><span class="keycap">D</span> move <span class="keycap">Mouse</span> look <span class="keycap">Shift</span> sprint <span class="keycap">Space</span> jump</li>
+          <li><span class="keycap">E</span> talk to the nearest issue</li>
+          <li><span class="keycap">Tab</span> map screen and lens switcher</li>
+          <li><span class="keycap">P</span> settings <span class="keycap">H</span> this help</li>
+          <li class="muted">Walk into a door or portal to travel. Red doors are locked by an issue.</li>
         </ul>
         <p class="muted">Press H to close.</p>
       </div>
     </div>
     <div id="map" class="overlay hidden"></div>
-    <div id="dialogue" class="overlay hidden"></div>
+    <div id="dialogue" class="overlay speech hidden"></div>
     <div id="settings" class="overlay hidden"></div>
     <div id="region-done" class="overlay hidden"></div>
     <div id="toast"></div>

@@ -6,6 +6,16 @@ import { hash32, rng } from "../io.ts";
 import { biomeFor } from "./biome.ts";
 import type { Door, Placement, PlacementEdge, Region, Vec3, World } from "./types.ts";
 
+const DOOR_PRIORITY: Door["edgeType"][] = [
+  "blocks",
+  "depends-on",
+  "parent-of",
+  "security",
+  "same-code-path",
+  "functional",
+  "user-journey",
+  "duplicate-of",
+];
 const CELL = 70; // spacing between region origins on the grid
 const HUB_SIZE = 30;
 
@@ -44,8 +54,9 @@ export function buildWorld(graph: GraphFile, lens: string, lenses: string[]): Wo
     const col = (i + 1) % cols;
     const row = Math.floor((i + 1) / cols);
     const bounds = { x: col * CELL - size / 2, z: row * CELL - size / 2, w: size, d: size };
+    // Feel follows the worst case for danger and the typical case for effort (charter: biome).
     const complexity = mean(ms.map((m) => m.complexity));
-    const security = mean(ms.map((m) => m.security));
+    const security = Math.max(...ms.map((m) => m.security));
     const kind = mode(ms.map((m) => m.kind));
     const biome = biomeFor(complexity, security, kind);
     const placements: Placement[] = ms.map((m) => {
@@ -93,15 +104,33 @@ export function buildWorld(graph: GraphFile, lens: string, lenses: string[]): Wo
 
   const regionOf = new Map(regions.map((r) => [r.id, r]));
   const doors: Door[] = [];
+  // One door per region pair, typed by the strongest bridge; a blocks bridge locks the door
+  // into the blocked region.
+  const byPair = new Map<
+    string,
+    { from: Region; to: Region; type: Door["edgeType"]; lock?: ClassifiedIssue | undefined }
+  >();
   for (const b of analysis.bridges) {
     const ra = analysis.regions[String(b.source)];
     const rb = analysis.regions[String(b.target)];
     const from = ra && regionOf.get(ra);
     const to = rb && regionOf.get(rb);
     if (!from || !to || from === to) continue;
-    const lockedBy = b.type === "blocks" ? byId.get(b.source) : undefined;
-    doors.push(doorBetween(from, to, b.type, lockedBy && to.id === rb ? lockedBy : undefined));
-    doors.push(doorBetween(to, from, b.type, undefined));
+    const key = [from.id, to.id].sort().join("|");
+    const current = byPair.get(key);
+    const rank = DOOR_PRIORITY.indexOf(b.type);
+    if (!current || rank < DOOR_PRIORITY.indexOf(current.type)) {
+      byPair.set(key, {
+        from,
+        to,
+        type: b.type,
+        ...(b.type === "blocks" ? { lock: byId.get(b.source) } : {}),
+      });
+    }
+  }
+  for (const { from, to, type, lock } of byPair.values()) {
+    doors.push(doorBetween(from, to, type, lock));
+    doors.push(doorBetween(to, from, type, undefined));
   }
   // Every region gets a portal back to the hub, and the hub a portal to every region.
   const hubBounds = { x: -HUB_SIZE / 2, z: -HUB_SIZE / 2, w: HUB_SIZE, d: HUB_SIZE };

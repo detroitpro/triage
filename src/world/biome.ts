@@ -56,14 +56,15 @@ const DUNGEON: Biome = {
 };
 
 /**
- * `complexity` and `security` are mean score levels (0..3) for a region, `kind` the dominant kind.
+ * `complexity` is the region's mean score level (0..3), `security` its maximum, `kind` the dominant kind.
  * High security always wins; otherwise complexity picks the biome.
  */
 export function biomeFor(complexity: number, security: number, kind: string): Biome {
   if (security >= THRESHOLDS.highSecurity) return DUNGEON;
   if (security >= 1.5 && complexity >= THRESHOLDS.highComplexity) return DUNGEON;
   if (complexity >= THRESHOLDS.highComplexity) return INDUSTRIAL;
-  if (complexity >= 1 || kind === "performance" || kind === "chore") return VILLAGE;
+  if (complexity >= 1) return VILLAGE;
+  if (complexity >= 0.5 && (kind === "performance" || kind === "chore")) return VILLAGE;
   return MEADOW;
 }
 

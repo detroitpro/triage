@@ -1,9 +1,25 @@
 import * as THREE from "three";
 import type { World } from "../../../src/world/types.ts";
-import type { Bounds } from "../pure/collision.ts";
-import { scatterProps } from "../pure/scatter.ts";
+import { installDiagnostics } from "../assets/Diagnostics.ts";
+import {
+  buildBuildingEnclosure,
+  buildDungeonEnclosure,
+  buildGround,
+  buildOpenEnclosure,
+} from "../assets/EnclosureKit.ts";
+import {
+  buildLightingRig,
+  configureRenderer,
+  type LightingRig,
+  SHADOW_MAP_SIZE,
+} from "../assets/LightingRig.ts";
+import { getMaterialLibrary, type MaterialLibrary } from "../assets/MaterialLibrary.ts";
+import { extraFamilies, geo, isSharedGeometry, makeGlowSprite } from "../assets/WorldPropKit.ts";
+import { hashString } from "../pure/rng.ts";
+import { type PropInstance, scatterProps } from "../pure/scatter.ts";
 import type { Area } from "./areas.ts";
 import { buildDoor, type DoorHandle } from "./doors.ts";
+import { makeLabelSprite } from "./labels.ts";
 import { buildNpc, type NpcHandle } from "./npc.ts";
 import { buildProps } from "./props.ts";
 
@@ -13,65 +29,29 @@ export interface BuiltArea {
   npcs: Map<number, NpcHandle>;
   doors: DoorHandle[];
   lights: THREE.Light[];
+  lib: MaterialLibrary;
+  rig: LightingRig;
 }
 
-const WALL_HEIGHT: Record<string, number> = { open: 0, building: 4, dungeon: 6 };
-
-function lambert(color: string): THREE.MeshLambertMaterial {
-  return new THREE.MeshLambertMaterial({ color, flatShading: true });
-}
-
-/** Four walls around `b`, with window gaps when `windows` is set. */
-function buildWalls(b: Bounds, height: number, color: string, windows: boolean): THREE.Group {
-  const g = new THREE.Group();
-  const mat = lambert(color);
-  const thick = 0.4;
-  const segLen = 4;
-  const addPanel = (cx: number, cz: number, len: number, y: number, h: number, alongX: boolean) => {
-    const geo = alongX
-      ? new THREE.BoxGeometry(len, h, thick)
-      : new THREE.BoxGeometry(thick, h, len);
-    const m = new THREE.Mesh(geo, mat);
-    m.position.set(cx, y + h / 2, cz);
-    g.add(m);
-  };
-  const side = (len: number, place: (t: number) => [number, number], alongX: boolean) => {
-    const n = Math.max(1, Math.ceil(len / segLen));
-    const actual = len / n;
-    for (let i = 0; i < n; i++) {
-      const [cx, cz] = place((i + 0.5) * actual);
-      if (windows && i % 2 === 1) {
-        addPanel(cx, cz, actual, 0, 1.0, alongX);
-        addPanel(cx, cz, actual, 2.4, height - 2.4, alongX);
-      } else {
-        addPanel(cx, cz, actual, 0, height, alongX);
-      }
-    }
-  };
-  side(b.w, (t) => [b.x + t, b.z], true);
-  side(b.w, (t) => [b.x + t, b.z + b.d], true);
-  side(b.d, (t) => [b.x, b.z + t], false);
-  side(b.d, (t) => [b.x + b.w, b.z + t], false);
-  return g;
-}
-
-/** Low fence posts around an open region so the edge is visible. */
-function buildFence(b: Bounds, color: string): THREE.InstancedMesh {
-  const step = 3;
-  const points: [number, number][] = [];
-  for (let x = b.x; x <= b.x + b.w; x += step) points.push([x, b.z], [x, b.z + b.d]);
-  for (let z = b.z + step; z < b.z + b.d; z += step) points.push([b.x, z], [b.x + b.w, z]);
-  const mesh = new THREE.InstancedMesh(
-    new THREE.BoxGeometry(0.2, 0.9, 0.2),
-    lambert(color),
-    points.length,
-  );
-  const m = new THREE.Matrix4();
-  points.forEach(([x, z], i) => {
-    m.makeTranslation(x, 0.45, z);
-    mesh.setMatrixAt(i, m);
+/** Scatter one family set with its own seed suffix so layers do not collide. */
+function scatterLayer(
+  area: Area,
+  families: string[],
+  density: number,
+  clearance: number,
+  suffix: string,
+  avoid: [number, number, number][],
+): PropInstance[] {
+  if (families.length === 0) return [];
+  return scatterProps({
+    regionId: `${area.id}:${suffix}`,
+    issues: area.placements.map((p) => p.issue),
+    bounds: area.bounds,
+    families,
+    avoid,
+    density,
+    clearance,
   });
-  return mesh;
 }
 
 export function buildArea(
@@ -80,74 +60,105 @@ export function buildArea(
   reviewed: (issue: number) => boolean,
 ): BuiltArea {
   const { biome, bounds } = area;
+  const lib = getMaterialLibrary(biome);
+  const seed = hashString(area.id);
   const group = new THREE.Group();
   group.name = `area-${area.id}`;
-  const lights: THREE.Light[] = [];
 
-  // Ground.
-  const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(bounds.w, bounds.d),
-    lambert(biome.palette.ground),
-  );
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.set(bounds.x + bounds.w / 2, 0, bounds.z + bounds.d / 2);
+  // Ground: faceted, vertex-tinted, textured per enclosure. It is also the per-frame hook
+  // host (never frustum-culled) so the rig and diagnostics get the renderer without game.ts.
+  const ground = buildGround(bounds, lib, seed);
   group.add(ground);
 
-  // Enclosure.
-  const height = WALL_HEIGHT[biome.enclosure] ?? 0;
-  if (biome.enclosure === "open") {
-    group.add(buildFence(bounds, biome.palette.wall));
-  } else {
-    group.add(buildWalls(bounds, height, biome.palette.wall, biome.enclosure === "building"));
-    const ceiling = new THREE.Mesh(
-      new THREE.PlaneGeometry(bounds.w, bounds.d),
-      lambert(biome.enclosure === "dungeon" ? "#0b0910" : biome.palette.wall),
-    );
-    ceiling.rotation.x = Math.PI / 2;
-    ceiling.position.set(bounds.x + bounds.w / 2, height, bounds.z + bounds.d / 2);
-    group.add(ceiling);
-  }
+  // Enclosure: open = fence + hills + far silhouettes + sky; building = timber or steel
+  // hall with lit windows and a beamed ceiling; dungeon = block walls, pillars, ribs.
+  const enclosure =
+    biome.enclosure === "open"
+      ? buildOpenEnclosure(bounds, lib, seed)
+      : biome.enclosure === "building"
+        ? buildBuildingEnclosure(bounds, lib)
+        : buildDungeonEnclosure(bounds, lib, seed);
+  for (const o of enclosure) group.add(o);
 
-  // Lights from the biome numbers only.
-  const hemi = new THREE.HemisphereLight(biome.sky, biome.palette.ground, biome.ambient * 1.2);
-  const sun = new THREE.DirectionalLight("#ffffff", biome.sun);
-  sun.position.set(bounds.x + bounds.w * 0.3, 20, bounds.z + bounds.d * 0.2);
-  sun.target.position.set(bounds.x + bounds.w / 2, 0, bounds.z + bounds.d / 2);
-  group.add(hemi, sun, sun.target);
-  lights.push(hemi, sun);
+  // Lighting rig from the biome numbers only.
+  const rig = buildLightingRig(biome, bounds);
+  group.add(rig.group);
+  const lights: THREE.Light[] = [...rig.lights];
 
-  // Props, seeded by region id + issue numbers.
-  const issues = area.placements.map((p) => p.issue);
-  const avoid = [
+  // Props in three layers: the biome's own families, kit mid props, ground decals.
+  const avoid: [number, number, number][] = [
     ...area.placements.map((p) => p.position),
     ...area.doors.map((d) => d.position),
     area.entrance,
   ];
-  const props = scatterProps({
-    regionId: area.id,
-    issues,
-    bounds,
-    families: biome.props,
-    avoid,
-    density: biome.enclosure === "open" ? 0.03 : 0.015,
-  });
-  group.add(buildProps(props, biome));
-  if (biome.enclosure === "dungeon") {
-    // Torches become point lights; cap the count to keep the shader cheap.
-    const torches = props.filter((p) => p.family === "torch").slice(0, 8);
-    for (const t of torches) {
-      const light = new THREE.PointLight(biome.palette.accent, 2.5, 12, 1.5);
-      light.position.set(t.position[0], 2.0, t.position[2]);
-      group.add(light);
-      lights.push(light);
+  const extras = extraFamilies(lib.kind);
+  const open = biome.enclosure === "open";
+  const main = scatterLayer(area, biome.props, open ? 0.03 : 0.016, 2.5, "main", avoid);
+  const mid = scatterLayer(area, extras.mid, open ? 0.012 : 0.008, 3.2, "mid", [
+    ...avoid,
+    ...main.map((p) => p.position),
+  ]);
+  const decalDensity = open ? 0.12 : lib.kind === "village" ? 0.04 : 0.012;
+  const decals = scatterLayer(area, extras.decals, decalDensity, 1.2, "decals", avoid);
+  const props = [...main, ...mid, ...decals];
+  group.add(buildProps(props, biome, lib));
+
+  // Practicals: torches flicker, lanterns are steady. The rig caps them per region.
+  const practicalFamily = lib.kind === "dungeon" ? "torch" : "lamp";
+  const candidates = props.filter((p) => p.family === practicalFamily);
+  // Spread the capped practicals across the room instead of taking the first few.
+  const stride = Math.max(1, Math.floor(candidates.length / 4));
+  for (let i = 0; i < candidates.length; i += stride) {
+    const p = candidates[i];
+    if (!p) continue;
+    const pos = new THREE.Vector3(p.position[0], 0, p.position[2]);
+    const flicker = practicalFamily === "torch";
+    if (flicker) {
+      // The flame sits in front of the bracket, which faces into the room.
+      pos.x += Math.sin(p.rotation) * 0.25 * p.scale;
+      pos.z += Math.cos(p.rotation) * 0.25 * p.scale;
+      pos.y = 2.3 * p.scale;
+    } else {
+      pos.x += Math.cos(p.rotation) * 0.4 * p.scale;
+      pos.z -= Math.sin(p.rotation) * 0.4 * p.scale;
+      pos.y = 2.4 * p.scale;
+    }
+    const added = rig.addPractical(
+      pos,
+      flicker ? "#ff8a3c" : lib.kind === "industrial" ? "#ffcf7a" : "#ffd79a",
+      flicker ? 34 : 12,
+      flicker ? 18 : 12,
+      flicker ? 1 : 0.15,
+    );
+    if (!added) break;
+  }
+
+  // Every practical gets a glow card whether or not it earned a real light.
+  for (const p of candidates) {
+    const flame = practicalFamily === "torch";
+    const glow = makeGlowSprite(flame ? "#ff9a4a" : "#ffe0a0", flame ? 1.6 : 1.1);
+    glow.position.set(
+      p.position[0] + (flame ? Math.sin(p.rotation) * 0.25 : Math.cos(p.rotation) * 0.4) * p.scale,
+      (flame ? 2.3 : 2.4) * p.scale,
+      p.position[2] + (flame ? Math.cos(p.rotation) * 0.25 : -Math.sin(p.rotation) * 0.4) * p.scale,
+    );
+    group.add(glow);
+    if (flame) {
+      // Warm pool on the floor and wall: the bounce a real light would give.
+      const pool = makeGlowSprite("#ff8a3c", 5.5);
+      pool.position.set(p.position[0], 1.2, p.position[2]);
+      pool.material = pool.material.clone();
+      pool.material.opacity = 0.28;
+      pool.material.userData.shared = false;
+      group.add(pool);
     }
   }
 
-  // NPCs.
+  // NPCs face the region centre.
   const npcs = new Map<number, NpcHandle>();
   const center = new THREE.Vector3(bounds.x + bounds.w / 2, 0, bounds.z + bounds.d / 2);
   for (const p of area.placements) {
-    const h = buildNpc(p, biome.palette.npc, reviewed(p.issue));
+    const h = buildNpc(p, biome.palette.npc, reviewed(p.issue), lib);
     const dx = center.x - p.position[0];
     const dz = center.z - p.position[2];
     h.group.rotation.y = Math.atan2(-dx, -dz) + Math.PI;
@@ -157,34 +168,83 @@ export function buildArea(
 
   // Doors and portals.
   const doors = area.doors.map((d) => {
-    const h = buildDoor(d, world, biome.palette.accent);
+    const h = buildDoor(d, world, biome.palette.accent, lib);
     group.add(h.group);
+    if (h.light) lights.push(h.light);
     return h;
   });
 
-  // Entrance marker.
+  // Entrance marker: inlaid ring with the region label on a low plinth.
   const pad = new THREE.Mesh(
-    new THREE.CircleGeometry(1.0, 20),
-    new THREE.MeshBasicMaterial({ color: biome.palette.accent, transparent: true, opacity: 0.5 }),
+    geo("entrance.ring", () => new THREE.RingGeometry(0.8, 1.15, 32)),
+    lib.get("emissiveSignal"),
   );
   pad.rotation.x = -Math.PI / 2;
-  pad.position.set(area.entrance[0], 0.01, area.entrance[2]);
-  group.add(pad);
+  pad.position.set(area.entrance[0], 0.02, area.entrance[2]);
+  const padCore = new THREE.Mesh(
+    geo("entrance.core", () => new THREE.CircleGeometry(0.7, 24)),
+    lib.get("stoneLight"),
+  );
+  padCore.rotation.x = -Math.PI / 2;
+  padCore.position.set(area.entrance[0], 0.018, area.entrance[2]);
+  group.add(pad, padCore);
+  if (area.region) {
+    const banner = makeLabelSprite([area.label], { height: 0.6 });
+    banner.position.set(area.entrance[0], 2.6, area.entrance[2]);
+    group.add(banner);
+  }
 
-  return { area, group, npcs, doors, lights };
+  // Per-frame hook on a sentinel that renders first: renderer settings before any program
+  // compiles, key light follow, flicker, diagnostics. game.ts never has to call us.
+  const start = performance.now();
+  const sentinel = new THREE.Mesh(
+    geo("sentinel", () => new THREE.PlaneGeometry(0.01, 0.01)),
+    new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false }),
+  );
+  sentinel.name = "frameHook";
+  sentinel.renderOrder = -1000;
+  sentinel.frustumCulled = false;
+  sentinel.position.set(bounds.x + bounds.w / 2, -5, bounds.z + bounds.d / 2);
+  // Never mutate renderer state mid-draw: three compiles programs and VAOs against the
+  // settings in force when an object is drawn. Defer to a microtask between frames.
+  let pending = false;
+  sentinel.onBeforeRender = (renderer, scene, camera) => {
+    if (pending) return;
+    pending = true;
+    const r = renderer as THREE.WebGLRenderer;
+    queueMicrotask(() => {
+      pending = false;
+      if (configureRenderer(r, biome)) {
+        scene.traverse((o) => {
+          const m = (o as THREE.Mesh).material as THREE.Material | THREE.Material[] | undefined;
+          if (Array.isArray(m)) for (const x of m) x.needsUpdate = true;
+          else if (m) m.needsUpdate = true;
+        });
+      }
+      rig.update(camera, (performance.now() - start) / 1000);
+      installDiagnostics(r, scene, area.id, SHADOW_MAP_SIZE);
+    });
+  };
+  group.add(sentinel);
+
+  return { area, group, npcs, doors, lights, lib, rig };
 }
 
 export function disposeArea(built: BuiltArea): void {
   built.group.traverse((obj) => {
     if (obj instanceof THREE.Mesh || obj instanceof THREE.Sprite) {
-      obj.geometry?.dispose();
+      const g = obj.geometry as THREE.BufferGeometry | undefined;
+      if (g && !isSharedGeometry(g)) g.dispose();
       const mat = obj.material as THREE.Material | THREE.Material[];
-      if (Array.isArray(mat)) for (const m of mat) m.dispose();
-      else if (mat) {
-        (mat as THREE.SpriteMaterial).map?.dispose();
-        mat.dispose();
+      const mats = Array.isArray(mat) ? mat : mat ? [mat] : [];
+      for (const m of mats) {
+        if (m.userData.shared) continue;
+        const map = (m as THREE.SpriteMaterial).map;
+        if (map && !map.userData.shared) map.dispose();
+        m.dispose();
       }
     }
+    if (obj instanceof THREE.DirectionalLight) obj.shadow.dispose();
   });
   built.group.removeFromParent();
 }

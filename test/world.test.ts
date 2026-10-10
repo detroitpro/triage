@@ -50,6 +50,17 @@ describe("buildWorld", () => {
     expect(locked.some((d) => d.locked?.by === 4 && d.to === "documents")).toBe(true);
   });
 
+  it("builds at most one door each way per region pair", () => {
+    const w = buildWorld(graph(), "feature", [...LENSES]);
+    const seen = new Map<string, number>();
+    for (const d of w.doors) {
+      if (d.kind !== "door") continue;
+      const k = `${d.from}->${d.to}`;
+      seen.set(k, (seen.get(k) ?? 0) + 1);
+    }
+    for (const n of seen.values()) expect(n).toBe(1);
+  });
+
   it("closing one issue moves nothing else", () => {
     const g = graph();
     const before = buildWorld(g, "feature", [...LENSES]);

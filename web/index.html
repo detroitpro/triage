@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>triage: issue world</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+    <div id="hud">
+      <div id="hud-top-left"><div id="hud-region">loading…</div><div id="hud-lens"></div></div>
+      <div id="hud-top-right"><div id="hud-region-count"></div><div id="hud-world-count"></div></div>
+      <canvas id="minimap" width="220" height="170"></canvas>
+      <div id="crosshair"></div>
+      <div id="hud-prompt"></div>
+      <div id="hud-hint">click to play · H help · Tab map · P settings</div>
+      <button id="gear" type="button" title="Settings (P)">⚙</button>
+    </div>
+    <div id="fade"></div>
+    <div id="help" class="overlay hidden">
+      <div class="panel">
+        <h2>Controls</h2>
+        <ul>
+          <li><b>Click</b> capture the mouse, <b>Esc</b> release</li>
+          <li><b>W A S D</b> move, <b>mouse</b> look, <b>Shift</b> sprint, <b>Space</b> jump</li>
+          <li><b>E</b> talk to the nearest issue</li>
+          <li><b>Tab</b> map screen and lens switcher</li>
+          <li><b>P</b> settings, <b>H</b> this help</li>
+          <li>Walk into a door or portal to travel. Red doors are locked by an issue.</li>
+        </ul>
+        <p class="muted">Press H to close.</p>
+      </div>
+    </div>
+    <div id="map" class="overlay hidden"></div>
+    <div id="dialogue" class="overlay hidden"></div>
+    <div id="settings" class="overlay hidden"></div>
+    <div id="region-done" class="overlay hidden"></div>
+    <div id="toast"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

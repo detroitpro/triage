@@ -1,5 +1,3 @@
-import type { TriageItem } from "./item.ts";
-
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const DEFAULT_MODEL = "openrouter/auto";
 
@@ -45,20 +43,4 @@ export async function chat(messages: ChatMessage[], opts: ChatOptions = {}): Pro
     );
   }
   return content;
-}
-
-/** Drafts follow-up questions for an item routed to `needs-info`. */
-export function draftFollowUp(item: TriageItem, opts: ChatOptions = {}): Promise<string> {
-  return chat(
-    [
-      {
-        role: "system",
-        content:
-          "You help triage incoming work. Write at most three short, specific questions that would " +
-          "let an engineer start on this item. Output only the questions as a bulleted list.",
-      },
-      { role: "user", content: `${item.title ? `Title: ${item.title}\n\n` : ""}${item.body}` },
-    ],
-    { maxTokens: 2000, ...opts },
-  );
 }

@@ -10,3 +10,6 @@ coverage/
 
 .DS_Store
 *.log
+
+# pipeline outputs (issue data from possibly private repos)
+data/

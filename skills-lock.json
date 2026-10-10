@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "building-with-typesafe-jev": {
+      "source": "aaddrick/building-with-typesafe-jev",
+      "sourceType": "github",
+      "skillPath": "skills/building-with-typesafe-jev/SKILL.md",
+      "computedHash": "72cb56a4ec0fb71814da5954545e2b1dd413e668dce5d4f160c225c1c6715b31"
+    },
     "typesafe-ai": {
       "source": "typesafe-ai/skills",
       "sourceType": "github",

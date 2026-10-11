@@ -22,3 +22,16 @@ describe("lodFor", () => {
     expect(lodFor(LABEL + 1, undefined).label).toBe(false);
   });
 });
+
+describe("label hysteresis", () => {
+  it("does not flicker around the label distance", () => {
+    let lod = lodFor(LABEL - 1, undefined);
+    let flips = 0;
+    for (let i = 0; i < 60; i++) {
+      const next = lodFor(i % 2 ? LABEL - 0.3 : LABEL + 0.3, lod);
+      if (next.label !== lod.label) flips++;
+      lod = next;
+    }
+    expect(flips).toBeLessThanOrEqual(1);
+  });
+});

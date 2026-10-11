@@ -3,7 +3,6 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import type { NpcForm } from "../../../src/world/types.ts";
 import type { MaterialLibrary } from "../assets/MaterialLibrary.ts";
 import { buildNpcBody } from "../assets/NpcFactory.ts";
-import { makeContactDisc } from "../assets/WorldPropKit.ts";
 import { lodFor, type NpcLod } from "../pure/lod.ts";
 import type { NpcHandle } from "./npc.ts";
 
@@ -18,7 +17,9 @@ import type { NpcHandle } from "./npc.ts";
 export class NpcCrowd {
   readonly group = new THREE.Group();
   private bodies = new Map<NpcForm, THREE.InstancedMesh>();
-  private discs: THREE.InstancedMesh;
+  /** Contact discs by opacity: floating forms ground more softly than standing ones. */
+  private discs = new Map<number, THREE.InstancedMesh>();
+  private capacity: number;
   private lod = new Map<number, NpcLod>();
   private m = new THREE.Matrix4();
 
@@ -28,6 +29,7 @@ export class NpcCrowd {
   ) {
     this.group.name = "npcCrowd";
     const capacity = Math.max(1, npcs.size);
+    this.capacity = capacity;
     const forms = new Set([...npcs.values()].map((h) => h.form));
     for (const form of forms) {
       const mesh = new THREE.InstancedMesh(bakedBody(form, lib), crowdMaterial(lib), capacity);
@@ -38,13 +40,17 @@ export class NpcCrowd {
       this.bodies.set(form, mesh);
       this.group.add(mesh);
     }
-    const disc = makeContactDisc(1, 0.55);
-    this.discs = new THREE.InstancedMesh(disc.geometry, disc.material, capacity);
-    this.discs.name = "crowd-discs";
-    this.discs.count = 0;
-    this.discs.frustumCulled = false;
-    this.discs.renderOrder = disc.renderOrder;
-    this.group.add(this.discs);
+    for (const h of npcs.values()) {
+      const material = h.disc.material as THREE.MeshBasicMaterial;
+      if (this.discs.has(material.opacity)) continue;
+      const discs = new THREE.InstancedMesh(h.disc.geometry, material, capacity);
+      discs.name = `crowd-discs-${material.opacity}`;
+      discs.count = 0;
+      discs.frustumCulled = false;
+      discs.renderOrder = h.disc.renderOrder;
+      this.discs.set(material.opacity, discs);
+      this.group.add(discs);
+    }
   }
 
   /** Is this NPC currently drawn at full detail (and so worth animating)? */
@@ -54,7 +60,7 @@ export class NpcCrowd {
 
   update(player: THREE.Vector3): void {
     const counts = new Map<NpcForm, number>();
-    let discs = 0;
+    const discCounts = new Map<number, number>();
     for (const [issue, h] of this.npcs) {
       const p = h.group.position;
       const d = Math.hypot(p.x - player.x, p.z - player.z);
@@ -72,17 +78,26 @@ export class NpcCrowd {
       // Instance = the NPC group's world transform times the body's own (scale, float).
       this.m.multiplyMatrices(h.group.matrixWorld, h.body.matrix);
       const i = counts.get(h.form) ?? 0;
+      // Capacity is the region's NPC count at build time; nothing adds NPCs after that.
+      if (i >= this.capacity) continue;
       mesh.setMatrixAt(i, this.m);
       counts.set(h.form, i + 1);
+      const opacity = (h.disc.material as THREE.MeshBasicMaterial).opacity;
+      const discs = this.discs.get(opacity);
+      if (!discs) continue;
+      const j = discCounts.get(opacity) ?? 0;
       this.m.multiplyMatrices(h.group.matrixWorld, h.disc.matrix);
-      this.discs.setMatrixAt(discs++, this.m);
+      discs.setMatrixAt(j, this.m);
+      discCounts.set(opacity, j + 1);
     }
     for (const [form, mesh] of this.bodies) {
       mesh.count = counts.get(form) ?? 0;
       mesh.instanceMatrix.needsUpdate = true;
     }
-    this.discs.count = discs;
-    this.discs.instanceMatrix.needsUpdate = true;
+    for (const [opacity, discs] of this.discs) {
+      discs.count = discCounts.get(opacity) ?? 0;
+      discs.instanceMatrix.needsUpdate = true;
+    }
     for (const issue of this.lod.keys()) if (!this.npcs.has(issue)) this.lod.delete(issue);
   }
 }
@@ -136,7 +151,13 @@ const crowdMaterials = new WeakMap<MaterialLibrary, THREE.MeshStandardMaterial>(
 function crowdMaterial(lib: MaterialLibrary): THREE.MeshStandardMaterial {
   let m = crowdMaterials.get(lib);
   if (!m) {
-    m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, metalness: 0 });
+    // Flat shading like the authored NPC materials, so the near/far switch does not pop.
+    m = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.8,
+      metalness: 0,
+      flatShading: true,
+    });
     m.userData.shared = true;
     crowdMaterials.set(lib, m);
   }

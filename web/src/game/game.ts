@@ -277,7 +277,6 @@ export class Game {
     this.player.update(dt);
     const built = this.built;
     if (!built) return;
-    built.crowd.update(this.player.camera.position);
     for (const n of built.npcs.values())
       if (built.crowd.isNear(n.placement.issue)) animateNpc(n, t, this.settings.reducedMotion);
     for (const d of built.doors) animateDoor(d, t);
@@ -305,6 +304,8 @@ export class Game {
       this.hud.setPrompt(nearest);
     }
     this.verbs.frame(dt);
+    // After verbs, so walking or shrinking NPCs' far instances track this frame's transform.
+    built.crowd.update(this.player.camera.position);
     this.hud.drawMinimap({
       bounds: built.area.bounds,
       npcs: [...built.npcs.values()].map((n) => ({
@@ -369,6 +370,8 @@ export class Game {
     if (show) {
       this.player.inputBlocked = true;
       this.player.unlock();
+      // Keyboard users land on the first control.
+      o.querySelector<HTMLElement>("select, input, button")?.focus();
     } else this.onOverlayClosed();
   }
 

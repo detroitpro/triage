@@ -4,8 +4,9 @@
 export const NEAR = 16;
 /** It drops to the instanced far body only past this, once near. */
 export const FAR = 19;
-/** Name labels past this distance are unreadable; hide them. */
+/** Name labels past this distance are unreadable; hide them (shown again inside LABEL_IN). */
 export const LABEL = 28;
+export const LABEL_IN = 26;
 
 export interface NpcLod {
   detail: "near" | "far";
@@ -15,5 +16,6 @@ export interface NpcLod {
 export function lodFor(distance: number, previous: NpcLod | undefined, forceNear = false): NpcLod {
   const wasNear = previous ? previous.detail === "near" : distance <= NEAR;
   const near = forceNear || distance <= NEAR || (wasNear && distance <= FAR);
-  return { detail: near ? "near" : "far", label: distance <= LABEL };
+  const label = distance <= LABEL_IN || (distance <= LABEL && (previous?.label ?? true));
+  return { detail: near ? "near" : "far", label };
 }

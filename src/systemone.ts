@@ -1,6 +1,7 @@
-// A SystemOne answerer. The real one is TypeSafeClient (Jev). `llmSystemOne` is a stand-in
-// that answers the same typed questions through OpenRouter when no TYPESAFE_API_KEY exists;
-// it returns the same response shape so every caller is unchanged when the key arrives.
+// A SystemOne answerer. The real one is TypeSafeClient (Jev), reached directly with
+// TYPESAFE_API_KEY or through OpenRouter's TypeSafe gateway with OPENROUTER_API_KEY.
+// `llmSystemOne` is a general-model stand-in with the same response shape, for tests and
+// explicit opt-in; it also needs OPENROUTER_API_KEY, so it is never the no-key fallback.
 import type {
   ChoiceQuestion,
   Question,
@@ -17,18 +18,39 @@ export interface SystemOne {
   systemOne<const Q extends Questions>(req: SystemOneRequest<Q>): PromiseLike<SystemOneResult<Q>>;
 }
 
+export const OPENROUTER_GATEWAY = "https://openrouter.ai/api";
+export const OPENROUTER_JEV_MODEL = JEV_MODEL.includes("/") ? JEV_MODEL : `~typesafe/${JEV_MODEL}`;
+
 export function jevClient(): SystemOne {
   return new TypeSafeClient({ defaultModel: JEV_MODEL, timeout: 30_000 });
 }
 
-/** Picks Jev when a key is present, otherwise the LLM stand-in. Logs which. */
+/** Jev through OpenRouter's TypeSafe gateway, billed to the OpenRouter key. */
+export function jevViaOpenRouter(apiKey: string, fetchImpl?: typeof fetch): SystemOne {
+  return new TypeSafeClient({
+    apiKey,
+    baseURL: OPENROUTER_GATEWAY,
+    defaultModel: OPENROUTER_JEV_MODEL,
+    timeout: 30_000,
+    ...(fetchImpl ? { fetch: fetchImpl } : {}),
+  });
+}
+
+/** Picks Jev direct, then Jev via OpenRouter. Logs which. With neither key, every call fails clearly. */
 export function pickSystemOne(log: (m: string) => void = () => {}): SystemOne {
   if (process.env.TYPESAFE_API_KEY) {
     log(`systemone: jev (${JEV_MODEL})`);
     return jevClient();
   }
-  log("systemone: OpenRouter stand-in (no TYPESAFE_API_KEY); confidences are self-reported");
-  return llmSystemOne();
+  if (process.env.OPENROUTER_API_KEY) {
+    log(`systemone: jev via OpenRouter (${OPENROUTER_JEV_MODEL})`);
+    return jevViaOpenRouter(process.env.OPENROUTER_API_KEY);
+  }
+  log("systemone: none (set OPENROUTER_API_KEY or TYPESAFE_API_KEY)");
+  return {
+    systemOne: () =>
+      Promise.reject(new Error("no Jev key: set OPENROUTER_API_KEY or TYPESAFE_API_KEY")),
+  };
 }
 
 function describe(name: string, q: Question): string {

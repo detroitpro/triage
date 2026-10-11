@@ -22,7 +22,7 @@ const USAGE = `Usage:
   triage validate      check graph.json and every world file
 
 Env: TRIAGE_REPO (owner/repo), TRIAGE_REPO_PATH, GITHUB_TOKEN (falls back to \`gh auth token\`),
-     OPENROUTER_API_KEY, TYPESAFE_API_KEY (optional; OpenRouter stand-in otherwise)`;
+     OPENROUTER_API_KEY, TYPESAFE_API_KEY (optional; Jev via OpenRouter otherwise)`;
 
 const log = (m: string) => console.error(m);
 

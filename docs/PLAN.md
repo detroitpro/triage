@@ -13,7 +13,8 @@ make smoke            # one real Jev + OpenRouter round trip
 ## Status (2026-10-10)
 
 Scaffold, secrets, CI, and fleet clones are done. `make check` is green and `make smoke` passes
-OpenRouter. Remaining blockers: a `TYPESAFE_API_KEY`, and the Phase 0 decisions below.
+OpenRouter and Jev through OpenRouter's gateway (`TYPESAFE_API_KEY` is optional). Remaining
+blockers: the Phase 0 decisions below.
 
 ## Phase 0 — Decide (Eric, before code)
 
@@ -59,7 +60,7 @@ OpenRouter. Remaining blockers: a `TYPESAFE_API_KEY`, and the Phase 0 decisions 
 ## Phase 5 — Fleet verification
 
 - [x] Clone present on every T3 host; T3 project registered
-- [x] `.env` materialized on every host (OpenRouter only until the TypeSafe key exists)
+- [x] `.env` materialized on every host (OpenRouter key; it also reaches Jev through the gateway)
 - [ ] `make setup && make test && make smoke` passes on each host
 
 ## Exit criteria

@@ -33,7 +33,7 @@ npm run server -- --live           # confirmed in-game actions reach GitHub; aud
 | Path | Purpose |
 |------|---------|
 | `src/questions.ts` | **Every** Jev question and threshold (issue, pair, intent). The review surface |
-| `src/systemone.ts` | `SystemOne` interface: real Jev client, or an OpenRouter stand-in when `TYPESAFE_API_KEY` is absent |
+| `src/systemone.ts` | `SystemOne` interface: Jev direct (`TYPESAFE_API_KEY`) or Jev via OpenRouter's gateway (`OPENROUTER_API_KEY`) |
 | `src/ingest/` | GitHub issues → `data/issues.json` |
 | `src/interrogate/` | Local clone → candidate functional and code areas (`data/areas.json`) |
 | `src/classify/` | One batched call per issue → `data/classified.json` |

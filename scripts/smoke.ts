@@ -4,6 +4,7 @@ import { TypeSafeClient } from "@typesafe-ai/sdk";
 import { loadDotEnv } from "../src/env.ts";
 import { chat } from "../src/llm.ts";
 import { issueQuestions } from "../src/questions.ts";
+import { jevViaOpenRouter } from "../src/systemone.ts";
 
 loadDotEnv();
 let failed = false;
@@ -28,15 +29,23 @@ await check("openrouter", "OPENROUTER_API_KEY", async () => {
   return JSON.stringify(reply.trim().slice(0, 40));
 });
 
-await check("jev", "TYPESAFE_API_KEY", async () => {
-  const { answers, model } = await new TypeSafeClient().systemOne({
-    state: {
-      title: "Checkout returns 500",
-      untrusted: { body: "Every checkout returns HTTP 500." },
-    },
-    questions: { kind: issueQuestions([], []).kind },
-  });
-  return `model=${model} kind=${answers.kind.choice} (${answers.kind.confidence})`;
-});
+const jevDirect = Boolean(process.env.TYPESAFE_API_KEY);
+await check(
+  jevDirect ? "jev" : "jev via openrouter",
+  jevDirect ? "TYPESAFE_API_KEY" : "OPENROUTER_API_KEY",
+  async () => {
+    const client = jevDirect
+      ? new TypeSafeClient()
+      : jevViaOpenRouter(process.env.OPENROUTER_API_KEY as string);
+    const { answers, model } = await client.systemOne({
+      state: {
+        title: "Checkout returns 500",
+        untrusted: { body: "Every checkout returns HTTP 500." },
+      },
+      questions: { kind: issueQuestions([], []).kind },
+    });
+    return `model=${model} kind=${answers.kind.choice} (${answers.kind.confidence})`;
+  },
+);
 
 process.exit(failed ? 1 : 0);

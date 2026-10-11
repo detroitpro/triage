@@ -5,9 +5,10 @@ import { biomeKind } from "./MaterialLibrary.ts";
 
 /**
  * Key + fill + rim from the biome numbers, one shadow-casting key, and flickering practicals
- * (torches, lanterns) that are glow cards, not lights: the light set is fixed per biome. Shadows only ever come from the key, and its map is static: rendered
- * once per area (or once per grid cell in areas larger than the map), never per frame. Only
- * static geometry casts; NPCs and anything animated ground themselves with contact discs.
+ * (torches, lanterns) that are glow cards, not lights, so the light set is fixed per biome.
+ * Shadows only ever come from the key, and its map is static: rendered once per area (or once
+ * per grid cell in areas larger than the map), never per frame. Only static geometry casts;
+ * NPCs and anything animated ground themselves with contact discs.
  */
 export interface Practical {
   glow: THREE.Sprite;
@@ -31,7 +32,7 @@ export interface LightingRig {
   addPractical(glow: THREE.Sprite, flicker: number): void;
 }
 
-/** Colour of the practicals (torches, lamps) per biome kind; areaBuilder uses it for the glow. */
+/** Colour of the practicals (torches, lamps) per biome kind: glow cards, pools, bounce tint. */
 export const PRACTICAL_COLOR: Record<string, string> = {
   dungeon: "#ff8a3c",
   industrial: "#ffcf7a",

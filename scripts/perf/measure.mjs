@@ -130,7 +130,7 @@ async function sample(areaId, variant) {
 if (mode === "regions") {
   // PERF_REGIONS=a,b limits the tour; PERF_REPEAT=n reports the median-fps pass of n.
   const only = process.env.PERF_REGIONS?.split(",");
-  const repeat = Number(process.env.PERF_REPEAT ?? 1);
+  const repeat = Math.max(1, Math.floor(Number(process.env.PERF_REPEAT ?? 1)) || 1);
   const all = await page.evaluate(() => ["hub", ...window.__triage.world.regions.map((r) => r.id)]);
   const ids = only ? all.filter((id) => only.includes(id)) : all;
   for (const id of ids) await sample(id); // warm-up: first visit compiles shaders

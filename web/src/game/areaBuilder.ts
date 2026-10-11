@@ -11,6 +11,7 @@ import {
   buildLightingRig,
   configureRenderer,
   type LightingRig,
+  PRACTICAL_COLOR,
   SHADOW_MAP_SIZE,
 } from "../assets/LightingRig.ts";
 import { getMaterialLibrary, type MaterialLibrary } from "../assets/MaterialLibrary.ts";
@@ -108,12 +109,10 @@ export function buildArea(
   // and the light count, and with it every shader, stays fixed per biome.
   const flame = lib.kind === "dungeon";
   const candidates = props.filter((p) => p.family === (flame ? "torch" : "lamp"));
-  const poolMaterial = makeGlowSprite("#ff8a3c", 1).material.clone();
-  poolMaterial.opacity = 0.28;
-  poolMaterial.userData.shared = false;
+  let poolMaterial: THREE.SpriteMaterial | null = null;
   for (const p of candidates) {
     // The flame sits in front of the bracket, which faces into the room.
-    const glow = makeGlowSprite(flame ? "#ff9a4a" : "#ffe0a0", flame ? 1.6 : 1.1);
+    const glow = makeGlowSprite(PRACTICAL_COLOR[lib.kind] ?? "#ffe0a0", flame ? 1.6 : 1.1);
     glow.position.set(
       p.position[0] + (flame ? Math.sin(p.rotation) * 0.25 : Math.cos(p.rotation) * 0.4) * p.scale,
       (flame ? 2.3 : 2.4) * p.scale,
@@ -124,7 +123,12 @@ export function buildArea(
     // Torches get a warm pool on the floor and wall, the bounce a real light would give.
     // Lamps do not: villages have dozens, and large transparent cards cost fill rate.
     if (flame) {
-      const pool = makeGlowSprite("#ff8a3c", 5.5);
+      const pool = makeGlowSprite(PRACTICAL_COLOR.dungeon ?? "#ff8a3c", 5.5);
+      if (!poolMaterial) {
+        poolMaterial = pool.material.clone();
+        poolMaterial.opacity = 0.28;
+        poolMaterial.userData.shared = false;
+      }
       pool.material = poolMaterial;
       pool.position.set(p.position[0], 1.2, p.position[2]);
       group.add(pool);
@@ -207,14 +211,18 @@ export function buildArea(
 }
 
 export function disposeArea(built: BuiltArea): void {
+  // Several objects may share one area-owned material (torch pools): dispose each once.
+  const disposed = new Set<THREE.Material>();
   built.group.traverse((obj) => {
     if (obj instanceof THREE.Mesh || obj instanceof THREE.Sprite) {
-      const g = obj.geometry as THREE.BufferGeometry | undefined;
+      // three shares one geometry across every Sprite; only meshes own theirs.
+      const g = obj instanceof THREE.Mesh ? (obj.geometry as THREE.BufferGeometry) : undefined;
       if (g && !isSharedGeometry(g)) g.dispose();
       const mat = obj.material as THREE.Material | THREE.Material[];
       const mats = Array.isArray(mat) ? mat : mat ? [mat] : [];
       for (const m of mats) {
-        if (m.userData.shared) continue;
+        if (m.userData.shared || disposed.has(m)) continue;
+        disposed.add(m);
         const map = (m as THREE.SpriteMaterial).map;
         if (map && !map.userData.shared) map.dispose();
         m.dispose();

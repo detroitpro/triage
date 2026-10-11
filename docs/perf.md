@@ -77,9 +77,9 @@ scene. The fixes are the render rules in the charter's "Look" section (milestone
 
 ## M7 progress
 
-fps with vsync off (GPU throughput) per step, same harness and machine. From step 2 on,
-each cell is the median of 5 passes (`PERF_REPEAT=5`); runs vary by up to ±20% in dense
-areas. Vsync-on fps stays near 30 until a frame fits in 16.7 ms, so it moves last.
+fps with vsync off (GPU throughput) per step, same harness and machine. Each cell after
+the baseline is the median of 5 passes (`PERF_REPEAT=5`, step 1 re-measured that way);
+runs vary by up to ±20% in dense areas, so differences under that are noise. Vsync-on fps stays near 30 until a frame fits in 16.7 ms, so it moves last.
 
 | Step | feature hub | feature, largest (100) | feature, smallest (10) | security, 256 | security, 224 |
 |------|----:|----:|----:|----:|----:|

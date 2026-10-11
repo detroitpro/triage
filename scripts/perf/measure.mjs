@@ -72,8 +72,12 @@ async function sample(areaId, variant) {
       }
       if (variant) {
         R.shadowMap.enabled = !variant.includes("no-shadows");
-        window.__perfDpr ??= R.getPixelRatio();
-        R.setPixelRatio(window.__perfDpr * (variant.includes("half-res") ? 0.5 : 1));
+        // Pin dynamic resolution so the variant, not the controller, sets the pixel count.
+        if (T.freezeResolution) T.freezeResolution(variant.includes("half-res") ? 0.5 : 1);
+        else {
+          window.__perfDpr ??= R.getPixelRatio();
+          R.setPixelRatio(window.__perfDpr * (variant.includes("half-res") ? 0.5 : 1));
+        }
         S.traverse((o) => {
           if (o.isPointLight) o.visible = !variant.includes("no-point-lights");
           if (o.isSprite && o.parent?.name.startsWith("npc-"))

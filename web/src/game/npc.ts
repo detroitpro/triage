@@ -11,6 +11,8 @@ export interface NpcHandle {
   group: THREE.Group;
   body: THREE.Group;
   ring: THREE.Mesh;
+  /** Contact disc; the crowd hides it and draws an instanced one when the NPC is far. */
+  disc: THREE.Mesh;
   label: THREE.Sprite;
   baseY: number;
   phase: number;
@@ -60,7 +62,8 @@ export function buildNpc(
   body.scale.setScalar(p.scale);
   group.add(body);
   // Grounding: a soft contact disc plus the reviewed ring.
-  group.add(makeContactDisc(0.75 * p.scale, authored.floats ? 0.4 : 0.6));
+  const disc = makeContactDisc(0.75 * p.scale, authored.floats ? 0.4 : 0.6);
+  group.add(disc);
   const ring = new THREE.Mesh(
     geo("npc.ring", () => new THREE.RingGeometry(0.72, 0.9, 32)),
     library.get("reward"),
@@ -81,6 +84,7 @@ export function buildNpc(
     group,
     body,
     ring,
+    disc,
     label,
     baseY: p.position[1],
     phase: (p.issue % 17) / 17,

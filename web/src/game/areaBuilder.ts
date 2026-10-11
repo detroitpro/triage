@@ -24,6 +24,7 @@ import type { Area } from "./areas.ts";
 import { buildDoor, type DoorHandle } from "./doors.ts";
 import { makeLabelSprite } from "./labels.ts";
 import { buildNpc, type NpcHandle } from "./npc.ts";
+import { NpcCrowd } from "./npcCrowd.ts";
 import { buildProps } from "./props.ts";
 
 export interface BuiltArea {
@@ -34,6 +35,8 @@ export interface BuiltArea {
   lights: THREE.Light[];
   lib: MaterialLibrary;
   rig: LightingRig;
+  /** Far NPCs, instanced; call `crowd.update` each frame with the player position. */
+  crowd: NpcCrowd;
 }
 
 /** Scatter one family set with its own seed suffix so layers do not collide. */
@@ -139,6 +142,8 @@ export function buildArea(
     group.add(h.group);
     npcs.set(p.issue, h);
   }
+  const crowd = new NpcCrowd(npcs, lib);
+  group.add(crowd.group);
 
   // Doors and portals.
   const doors = area.doors.map((d) => {
@@ -200,7 +205,7 @@ export function buildArea(
   };
   group.add(sentinel);
 
-  return { area, group, npcs, doors, lights, lib, rig };
+  return { area, group, npcs, doors, lights, lib, rig, crowd };
 }
 
 export function disposeArea(built: BuiltArea): void {
@@ -221,6 +226,7 @@ export function disposeArea(built: BuiltArea): void {
         m.dispose();
       }
     }
+    if (obj instanceof THREE.InstancedMesh) obj.dispose();
     if (obj instanceof THREE.DirectionalLight) obj.shadow.dispose();
   });
   built.group.removeFromParent();

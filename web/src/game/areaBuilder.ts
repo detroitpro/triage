@@ -15,6 +15,7 @@ import {
   SHADOW_MAP_SIZE,
 } from "../assets/LightingRig.ts";
 import { getMaterialLibrary, type MaterialLibrary, WIND } from "../assets/MaterialLibrary.ts";
+import { buildMotes, followMotes } from "../assets/Motes.ts";
 import { radialFalloff } from "../assets/ProceduralTextures.ts";
 import { extraFamilies, geo, isSharedGeometry, makeGlowSprite } from "../assets/WorldPropKit.ts";
 import type { Bounds } from "../pure/collision.ts";
@@ -179,6 +180,8 @@ export function buildArea(
   }
 
   const sky = group.getObjectByName("sky");
+  const motes = buildMotes(biome);
+  if (motes) group.add(motes);
 
   // Per-frame hook on a sentinel that renders first: renderer settings before any program
   // compiles, key light follow, flicker, diagnostics. game.ts never has to call us.
@@ -211,6 +214,7 @@ export function buildArea(
       WIND.value = performance.now() / 1000;
       // The sky dome follows the camera so no region is large enough to reach its edge.
       sky?.position.set(camera.position.x, 0, camera.position.z);
+      if (motes) followMotes(motes, camera, r.getPixelRatio());
       installDiagnostics(r, scene, area.id, shadowMapSize);
     });
   };
@@ -223,9 +227,9 @@ export function disposeArea(built: BuiltArea): void {
   // Several objects may share one area-owned material (torch pools): dispose each once.
   const disposed = new Set<THREE.Material>();
   built.group.traverse((obj) => {
-    if (obj instanceof THREE.Mesh || obj instanceof THREE.Sprite) {
-      // three shares one geometry across every Sprite; only meshes own theirs.
-      const g = obj instanceof THREE.Mesh ? (obj.geometry as THREE.BufferGeometry) : undefined;
+    if (obj instanceof THREE.Mesh || obj instanceof THREE.Sprite || obj instanceof THREE.Points) {
+      // three shares one geometry across every Sprite; meshes and points own theirs.
+      const g = obj instanceof THREE.Sprite ? undefined : (obj.geometry as THREE.BufferGeometry);
       if (g && !isSharedGeometry(g)) g.dispose();
       const mat = obj.material as THREE.Material | THREE.Material[];
       const mats = Array.isArray(mat) ? mat : mat ? [mat] : [];

@@ -89,3 +89,17 @@ runs vary by up to ±20% in dense areas, so differences under that are noise. Vs
 
 After step 2 the feature tour compiles 36 shader programs instead of 53 and the count holds
 across the tour. The dense security areas are bound by NPC draw calls (step 4).
+
+### What players see (vsync on)
+
+Median of 3 passes; the low tier holds frame time with dynamic resolution, so the scale it
+settled at is part of the result.
+
+| Step | feature hub | feature, largest (100) | feature, smallest (10) | security, 256 | security, 224 |
+|------|----:|----:|----:|----:|----:|
+| baseline | 26 | 25 | 47 | 22 | 24 |
+| 3. quality tiers, dynamic resolution (low tier: no MSAA, 1024 shadows) | 60 @ 0.75 | 54 @ 0.6 | 60 @ 0.9 | 40 @ 0.6 | 45 @ 0.6 |
+
+`@` is the dynamic resolution scale. The dense areas sit at the 0.6 floor: they are bound
+by NPC draw calls, not pixels (step 4).
+

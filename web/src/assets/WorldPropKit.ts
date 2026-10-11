@@ -626,7 +626,9 @@ export function makeGlowSprite(color: string, size: number): THREE.Sprite {
   if (!m) {
     m = new THREE.SpriteMaterial({
       map: radialFalloff(),
-      color,
+      // HDR on purpose (linear colour above 1): the core of a glow card clears the bloom
+      // threshold, which white text and lit surfaces never do.
+      color: new THREE.Color(color).multiplyScalar(1.6),
       transparent: true,
       opacity: 0.8,
       blending: THREE.AdditiveBlending,

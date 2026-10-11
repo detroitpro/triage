@@ -233,6 +233,10 @@ export class Game {
         this.profile.shadowMapSize,
       );
       this.dynres.reset();
+      if (this.frozenScale === null) {
+        this.renderer.setPixelRatio(this.basePixelRatio() * this.dynres.scale);
+        this.post.syncPixelRatio();
+      }
       // Released issues stay gone until the world is rebuilt by the pipeline.
       for (const p of area.placements) if (this.isReleased(p.issue)) this.removeNpc(p.issue);
       this.scene.add(this.built.group);

@@ -1,4 +1,6 @@
-// Finishing-pass values per biome (charter "Look": post is owned by the biome). Dependency
+// Finishing-pass values per biome. Bloom thresholds stay above 1: unlit white (labels,
+// paper, lit skin) tops out at 1.0, and only HDR emissive (glow cards, flames) passes.
+// (charter "Look": post is owned by the biome). Dependency
 // free so the client imports the same table for older world files and for the hub.
 import type { BiomePost } from "./types.ts";
 
@@ -23,7 +25,7 @@ export const POST = {
   },
   village: {
     bloom: 0.45,
-    bloomThreshold: 1.02,
+    bloomThreshold: 1.05,
     saturation: 1.1,
     contrast: 1.08,
     warmth: 0.18,
@@ -32,7 +34,7 @@ export const POST = {
   },
   industrial: {
     bloom: 0.55,
-    bloomThreshold: 1.0,
+    bloomThreshold: 1.05,
     saturation: 0.95,
     contrast: 1.12,
     warmth: -0.08,
@@ -41,7 +43,7 @@ export const POST = {
   },
   dungeon: {
     bloom: 0.7,
-    bloomThreshold: 0.95,
+    bloomThreshold: 1.05,
     saturation: 0.9,
     contrast: 1.15,
     warmth: -0.05,

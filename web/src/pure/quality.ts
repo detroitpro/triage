@@ -10,9 +10,12 @@ export interface QualityProfile {
   /** Dynamic resolution range, as a fraction of the capped DPR. */
   minScale: number;
   maxScale: number;
-  /** MSAA. A WebGL context attribute: changing it needs a reload. */
+  /** MSAA, applied on the post stack's scene target (`samples`); kept for the profile table. */
   antialias: boolean;
   shadowMapSize: number;
+  /** Post: scale on the size given to the bloom pass (it halves that again), and MSAA samples on the scene target. */
+  bloomScale: number;
+  samples: number;
 }
 
 export const PROFILES: Record<Tier, QualityProfile> = {
@@ -23,6 +26,8 @@ export const PROFILES: Record<Tier, QualityProfile> = {
     maxScale: 1,
     antialias: false,
     shadowMapSize: 1024,
+    bloomScale: 0.5,
+    samples: 0,
   },
   high: {
     tier: "high",
@@ -31,6 +36,8 @@ export const PROFILES: Record<Tier, QualityProfile> = {
     maxScale: 1,
     antialias: true,
     shadowMapSize: 2048,
+    bloomScale: 1,
+    samples: 4,
   },
 };
 

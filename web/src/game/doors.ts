@@ -130,7 +130,8 @@ function buildPortal(group: THREE.Group, lib: MaterialLibrary, locked: boolean):
   group.add(disc);
   // A halo and a pool of light on the floor: the portal reads as a light source without
   // being one.
-  const halo = makeGlowSprite(accent, 5.5);
+  const halo = makeGlowSprite(accent, 4);
+  halo.material = portalHaloMaterial(halo.material);
   halo.position.set(0, 2.0, 0.3);
   group.add(halo);
   const pool = new THREE.Mesh(
@@ -296,17 +297,17 @@ function buildFrame(
   return { signal, glow };
 }
 
-// Signal red, kept out of tone mapping: ACES pushes bright red toward the torches' orange.
-const LOCK_RED = "#ff1020";
+// Signal red. The post stack tone maps every pixel (ACES), which pushes bright red toward the
+// torches' orange, so the lamp stays at a moderate intensity where ACES keeps the hue.
+const LOCK_RED = "#ff0814";
 let lockLamp: THREE.MeshStandardMaterial | null = null;
 function lockLampMaterial(): THREE.MeshStandardMaterial {
   if (!lockLamp) {
     lockLamp = new THREE.MeshStandardMaterial({
       color: LOCK_RED,
       emissive: LOCK_RED,
-      emissiveIntensity: 1,
+      emissiveIntensity: 0.9,
       roughness: 0.4,
-      toneMapped: false,
     });
     lockLamp.userData.shared = true;
   }
@@ -318,7 +319,6 @@ function lockGlowMaterial(base: THREE.SpriteMaterial, opacity: number): THREE.Sp
   if (!m) {
     m = base.clone();
     m.opacity = opacity;
-    m.toneMapped = false;
     m.userData.shared = true;
     lockGlows.set(opacity, m);
   }
@@ -385,4 +385,17 @@ export function animateDoor(h: DoorHandle, t: number): void {
       (h.glow.userData.pair as THREE.Sprite | undefined)?.scale.setScalar(1.0 + pulse * 0.8);
     }
   }
+}
+
+const portalHalos = new Map<THREE.SpriteMaterial, THREE.SpriteMaterial>();
+/** Portal halos are large; at full glow they wash the ring geometry out. */
+function portalHaloMaterial(base: THREE.SpriteMaterial): THREE.SpriteMaterial {
+  let m = portalHalos.get(base);
+  if (!m) {
+    m = base.clone();
+    m.opacity = 0.45;
+    m.userData.shared = true;
+    portalHalos.set(base, m);
+  }
+  return m;
 }

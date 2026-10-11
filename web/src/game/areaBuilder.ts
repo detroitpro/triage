@@ -117,7 +117,7 @@ export function buildArea(
   const candidates = props.filter((p) => p.family === (flame ? "torch" : "lamp"));
   for (const p of candidates) {
     // The flame sits in front of the bracket, which faces into the room.
-    const glow = makeGlowSprite(PRACTICAL_COLOR[lib.kind] ?? "#ffe0a0", flame ? 1.6 : 1.1);
+    const glow = makeGlowSprite(PRACTICAL_COLOR[lib.kind] ?? "#ffe0a0", flame ? 1.2 : 1.1);
     glow.position.set(
       p.position[0] + (flame ? Math.sin(p.rotation) * 0.25 : Math.cos(p.rotation) * 0.4) * p.scale,
       (flame ? 2.3 : 2.4) * p.scale,

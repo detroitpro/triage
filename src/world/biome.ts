@@ -1,6 +1,7 @@
 // The biome function: (complexity, security, kind) -> look and feel. Second review surface.
 // Change feel here, not in web/. Charter: "Biome function".
 import { THRESHOLDS } from "../questions.ts";
+import { POST } from "./post.ts";
 import type { Biome } from "./types.ts";
 
 const MEADOW: Biome = {
@@ -14,6 +15,7 @@ const MEADOW: Biome = {
   props: ["tree", "flower"],
   npcForm: "creature",
   sound: "birds",
+  post: { ...POST.meadow },
 };
 
 const VILLAGE: Biome = {
@@ -27,6 +29,7 @@ const VILLAGE: Biome = {
   props: ["crate", "lamp"],
   npcForm: "villager",
   sound: "town",
+  post: { ...POST.village },
 };
 
 const INDUSTRIAL: Biome = {
@@ -40,6 +43,7 @@ const INDUSTRIAL: Biome = {
   props: ["pipe", "crate", "lamp"],
   npcForm: "worker",
   sound: "machines",
+  post: { ...POST.industrial },
 };
 
 const DUNGEON: Biome = {
@@ -53,6 +57,7 @@ const DUNGEON: Biome = {
   props: ["torch", "bones"],
   npcForm: "shade",
   sound: "drips",
+  post: { ...POST.dungeon },
 };
 
 /**

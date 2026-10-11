@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { Door, Placement, Region, Vec3, World } from "../../../src/world/types.ts";
+import { PostStack } from "../assets/PostStack.ts";
 import { loadWorld } from "../load.ts";
 import type { Action } from "../pure/actions.ts";
 import { distanceXZ } from "../pure/collision.ts";
@@ -90,6 +91,7 @@ export class Game {
   private dynres: DynamicResolution;
   private lastFrameAt = 0;
   private frozenScale: number | null = null;
+  private post!: PostStack;
   private built: BuiltArea | null = null;
   private armedDoors = new Set<string>();
   private edgeLines = new THREE.Group();
@@ -115,10 +117,15 @@ export class Game {
     this.profile =
       PROFILES[this.settings.quality === "auto" ? this.autoTier : this.settings.quality];
     this.dynres = new DynamicResolution(this.profile.minScale, this.profile.maxScale);
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: this.profile.antialias });
+    // The canvas only receives fullscreen post passes; MSAA lives on the scene target.
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
     this.renderer.setPixelRatio(this.basePixelRatio());
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.player = new Player(canvas, this.settings);
+    this.post = new PostStack(this.renderer, this.scene, this.player.camera, {
+      bloomScale: this.profile.bloomScale,
+      samples: this.profile.samples,
+    });
     this.scene.add(this.edgeLines);
     this.api = new Api(undefined, () => {
       this.hud.setMode("dry-run", true);
@@ -226,6 +233,10 @@ export class Game {
         this.profile.shadowMapSize,
       );
       this.dynres.reset();
+      if (this.frozenScale === null) {
+        this.renderer.setPixelRatio(this.basePixelRatio() * this.dynres.scale);
+        this.post.syncPixelRatio();
+      }
       // Released issues stay gone until the world is rebuilt by the pipeline.
       for (const p of area.placements) if (this.isReleased(p.issue)) this.removeNpc(p.issue);
       this.scene.add(this.built.group);
@@ -258,6 +269,7 @@ export class Game {
     const b = area.biome;
     this.scene.background = new THREE.Color(b.sky);
     this.scene.fog = new THREE.FogExp2(b.fog.color, b.fog.density);
+    this.post.apply(b);
   }
 
   // ---- loop -------------------------------------------------------------------
@@ -269,8 +281,14 @@ export class Game {
 
   private frame(): void {
     const now = performance.now();
-    if (this.frozenScale === null && this.lastFrameAt && this.dynres.update(now - this.lastFrameAt))
+    if (
+      this.frozenScale === null &&
+      this.lastFrameAt &&
+      this.dynres.update(now - this.lastFrameAt)
+    ) {
       this.renderer.setPixelRatio(this.basePixelRatio() * this.dynres.scale);
+      this.post.syncPixelRatio();
+    }
     this.lastFrameAt = now;
     const dt = Math.min(0.05, this.clock.getDelta());
     const t = this.clock.elapsedTime;
@@ -317,13 +335,14 @@ export class Game {
       yaw: this.player.yaw,
       fill: built.area.biome.sky,
     });
-    this.renderer.render(this.scene, this.player.camera);
+    this.post.render();
   }
 
   private resize(): void {
     const w = window.innerWidth;
     const h = window.innerHeight;
     this.renderer.setSize(w, h, false);
+    this.post.setSize(w, h);
     this.player.camera.aspect = w / h;
     this.player.camera.updateProjectionMatrix();
   }
@@ -702,6 +721,7 @@ export class Game {
       freezeResolution: (scale) => {
         this.frozenScale = scale;
         this.renderer.setPixelRatio(this.basePixelRatio() * (scale ?? this.dynres.scale));
+        this.post.syncPixelRatio();
       },
       quality: () => ({
         tier: this.profile.tier,

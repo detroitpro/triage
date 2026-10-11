@@ -527,7 +527,8 @@ export class Verbs {
     const dir = end.clone().sub(start);
     const dist = Math.max(0.01, dir.length());
     const yaw0 = h.group.rotation.y;
-    const yaw1 = Math.atan2(-dir.x, -dir.z) + Math.PI;
+    // Face the way it walks (bodies face -Z).
+    const yaw1 = Math.atan2(-dir.x, -dir.z);
     const base = h.group.scale.clone();
     const reduced = this.host.reducedMotion();
     const dur = reduced ? 0.4 : Math.min(3.2, 0.8 + dist / 4);

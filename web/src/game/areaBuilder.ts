@@ -145,7 +145,9 @@ export function buildArea(
     const h = buildNpc(p, biome.palette.npc, reviewed(p.issue), lib, world.labelSet ?? []);
     const dx = center.x - p.position[0];
     const dz = center.z - p.position[2];
-    h.group.rotation.y = Math.atan2(-dx, -dz) + Math.PI;
+    // Bodies face -Z: this turns that front toward the centre (the old extra half turn had
+    // every NPC facing the wall behind it).
+    h.group.rotation.y = Math.atan2(-dx, -dz);
     group.add(h.group);
     npcs.set(p.issue, h);
   }

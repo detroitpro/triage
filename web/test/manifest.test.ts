@@ -98,6 +98,8 @@ describe("validateManifest, remaining rules", () => {
     expect(one({ ...base, file: "../x.glb" }).join()).toMatch(/path/);
     expect(one({ ...base, height: 9 }).join()).toMatch(/height/);
     expect(one({ ...base, clips: {} }).join()).toMatch(/idle/);
+    expect(one({ ...base, selfLight: 2 }).join()).toMatch(/selfLight/);
+    expect(one({ ...base, hover: 3 }).join()).toMatch(/hover/);
     expect(one({ ...base, provenance: { ...base.provenance, license: "" } }).join()).toMatch(
       /provenance/,
     );

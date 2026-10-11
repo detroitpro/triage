@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { MeshoptSimplifier } from "three/examples/jsm/libs/meshopt_simplifier.module.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { NpcForm } from "../../../src/world/types.ts";
 import type { MaterialLibrary } from "../assets/MaterialLibrary.ts";
@@ -145,7 +146,9 @@ function bakedBody(form: NpcForm, lib: MaterialLibrary): BakedPart[] {
       | THREE.MeshStandardMaterial
       | undefined;
     if (!mat || (mat.transparent && !mat.map)) return;
-    let g = o.geometry.clone();
+    // Packed GLBs store quantized (normalized integer) attributes: writing posed world-space
+    // positions back into those would clamp to [-1, 1]. Bake in plain floats.
+    let g = toFloatAttributes(o.geometry.clone());
     if (o instanceof THREE.SkinnedMesh) {
       // Apply the current pose: bone transforms per vertex, then the mesh's world matrix.
       o.skeleton.update();
@@ -195,13 +198,96 @@ function bakedBody(form: NpcForm, lib: MaterialLibrary): BakedPart[] {
     if (geometry) parts.push({ geometry, material: crowdMaterial(lib) });
   }
   for (const [material, list] of textured) {
-    const geometry = merge(list);
+    const merged = merge(list);
+    // Generated characters are ~15k triangles; far away they are a few pixels tall.
+    const geometry = merged ? simplifyFar(merged) : null;
     // Parts whose attribute sets differ cannot merge; drop that part rather than the crowd.
     if (geometry) parts.push({ geometry, material });
     else console.warn(`crowd: could not merge ${form} parts for one material; skipped`);
   }
   byForm.set(form, parts);
   return parts;
+}
+
+/** Replace quantized, normalized, or interleaved attributes with plain Float32 copies. */
+function toFloatAttributes(g: THREE.BufferGeometry): THREE.BufferGeometry {
+  for (const [name, attr] of Object.entries(g.attributes)) {
+    // Packed (meshopt) GLBs load as interleaved attributes: always copy those out, since a
+    // cloned geometry can still share the interleaved buffer with the template.
+    const interleaved = (attr as THREE.InterleavedBufferAttribute).isInterleavedBufferAttribute;
+    if (!interleaved && attr.array instanceof Float32Array && !attr.normalized) continue;
+    // Skin indices must stay integers; the bake removes them afterwards anyway.
+    if (name === "skinIndex") continue;
+    const out = new Float32Array(attr.count * attr.itemSize);
+    for (let i = 0; i < attr.count; i++)
+      for (let c = 0; c < attr.itemSize; c++) out[i * attr.itemSize + c] = attr.getComponent(i, c);
+    g.setAttribute(name, new THREE.BufferAttribute(out, attr.itemSize));
+  }
+  return g;
+}
+
+/** Triangle budget for one far body (generated characters only; authored ones are smaller). */
+export const FAR_TRIANGLES = 3000;
+
+/** Starts the simplifier's WebAssembly; call before any area builds (main.ts does). */
+export const simplifierReady: Promise<void> = MeshoptSimplifier.ready;
+let simplifierLoaded = false;
+simplifierReady.then(
+  () => {
+    simplifierLoaded = true;
+  },
+  // Without the simplifier, far bodies keep full detail (slower, still correct).
+  (err: unknown) => console.warn("crowd: meshopt simplifier unavailable", err),
+);
+
+/**
+ * Reduce a far body to about FAR_TRIANGLES with meshoptimizer. Returns the input
+ * unchanged when it is already small or the simplifier is not loaded yet.
+ */
+function simplifyFar(g: THREE.BufferGeometry): THREE.BufferGeometry {
+  const pos = g.attributes.position;
+  if (!simplifierLoaded || !pos || pos.count / 3 <= FAR_TRIANGLES * 1.5) return g;
+  // Weld by position and uv (not normals, which would split every crease): uv seams stay
+  // split so no triangle ever samples across the texture atlas.
+  const uv = g.attributes.uv;
+  const ids = new Map<string, number>();
+  const positions: number[] = [];
+  const uvs: number[] = [];
+  const index = new Uint32Array(pos.count);
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    const u = uv ? uv.getX(i) : 0;
+    const v = uv ? uv.getY(i) : 0;
+    const key = `${Math.round(x * 1e4)},${Math.round(y * 1e4)},${Math.round(z * 1e4)},${Math.round(u * 1e4)},${Math.round(v * 1e4)}`;
+    let id = ids.get(key);
+    if (id === undefined) {
+      id = positions.length / 3;
+      ids.set(key, id);
+      positions.push(x, y, z);
+      uvs.push(u, v);
+    }
+    index[i] = id;
+  }
+  const [indices] = MeshoptSimplifier.simplify(
+    index,
+    new Float32Array(positions),
+    3,
+    FAR_TRIANGLES * 3,
+    // Far bodies are a few pixels tall: a coarse error is invisible. Seam borders are not
+    // locked (locking them freezes most of a textured mesh); collapses along a seam keep
+    // each side's own uvs, so colours stay put.
+    0.2,
+  );
+  const out = new THREE.BufferGeometry();
+  out.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  if (uv) out.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  out.setIndex(new THREE.BufferAttribute(indices, 1));
+  out.computeVertexNormals();
+  out.userData.shared = true;
+  g.dispose();
+  return out;
 }
 
 const crowdMaterials = new WeakMap<MaterialLibrary, THREE.MeshStandardMaterial>();

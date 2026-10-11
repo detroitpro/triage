@@ -127,3 +127,20 @@ sampling is ~30% of a dense frame), spatial chunks for scattered props so off-sc
 are culled (373k triangles in the densest area, all from the environment), and a lower
 resolution floor on the low tier. A 250-NPC region is also a layout question: the
 pipeline could split regions that large.
+
+## M8: generated characters (2026-10-11)
+
+Meshy characters (one skinned mesh of ~15.5k triangles per near NPC, far crowd simplified at
+bake time to ~5.5k triangles per body, uv seams kept so colours do not smear), vsync on, median of 3, low tier, 500 issues.
+
+| Area | Issues | fps | Worst frame | Draw calls | Triangles | Scale |
+|------|------:|----:|----:|----:|----:|----:|
+| feature hub | 0 | 60 | 17 ms | 126 | 59k | 1.0 |
+| feature, smallest | 10 | 60 | 17 ms | 78 | 162k | 1.0 |
+| feature, largest | 100 | 60 | 17 ms | 206 | 700k | 1.0 |
+| security, 256 | 256 | 60 | 39 ms | 249 | 1,688k | 0.95 |
+| security, 224 | 224 | 60 | 23 ms | 185 | 1,449k | 1.0 |
+
+The densest areas, which missed the M7 gate at 43–47 fps, now hold 60 fps at full resolution:
+a near NPC is one draw call instead of about 35, and far bodies are simplified. Without the
+far simplification the densest area drew 3.6M triangles and fell to 36 fps.

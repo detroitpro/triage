@@ -32,7 +32,10 @@ here first, then in code.
 
 - Not a replacement for the GitHub issue page. Deep editing stays on GitHub.
 - Not a multiplayer or hosted product in the first versions. Local, single user.
-- Not an asset-heavy game. Procedural, low poly, generated from data. No art pipeline.
+- Not hand-built content. Layout, biomes, and who stands where come from data. Art is a
+  kit (characters, props, materials) that agents generate with scripted tools; the data
+  picks from the kit and parameterizes it. No hand modeling, no GUI-only art steps.
+- Not low fidelity. The bar is a current stylized game, not a retro one (see "Look").
 - Not autonomous. Nothing is written to GitHub without an explicit in-game confirmation.
 - Not a tag viewer. Labels are an input signal, never the primary grouping.
 
@@ -174,6 +177,46 @@ building → dungeon), ambient sound, and NPC form family. Rough mapping:
 
 This function is the second review surface. Change feel here, not in the client.
 
+### Look
+
+**The bar is a current stylized game: Fortnite is the minimum, not the ceiling.**
+Stylized, not photoreal. Readable silhouettes, saturated biome palettes, and polish.
+
+| Area | Bar |
+|------|-----|
+| Characters | skinned, rigged, animated (idle, talk, react, leave); faces with expression; a base body per NPC form with variants. Data picks variant, scale, palette, accessories, and animation state |
+| Environment | dense, layered props and foliage; real architecture for buildings and dungeons; terrain with height and material blends, not flat floors |
+| Materials | stylized PBR: albedo, normal, roughness; compressed textures; no flat-shaded faces as the default |
+| Light | one dynamic sun or key light with soft shadows (technique per tier chosen in M7: filtered PCF or VSM); ambient occlusion; emissive practicals (torches, lamps, windows) that glow through bloom instead of each being a real-time light |
+| Post | tone mapping, bloom, color grade per biome, fog. Owned by the biome, like everything else about mood |
+| Motion | animated foliage, water, particles, camera feel; nothing in the world is perfectly still |
+
+**Assets.** Characters and hero props are generated with the `threejs-3d-generator`,
+`threejs-image-generator`, and `threejs-audio-generator` skills by a script that records
+each asset's prompt, tool, seed, and license in a manifest. Generated files are checked
+in, compressed (glTF with meshopt or Draco, KTX2 textures), and within a size budget, so the
+game runs without generator keys. Architecture, terrain, and scatter stay procedural where
+they meet the bar. No asset is ever derived from issue text or other `data/`.
+
+**Performance.** The look has a budget, measured on a reference machine, not guessed.
+
+| Target | Value |
+|--------|-------|
+| Reference machine | Intel UHD 750-class integrated GPU, 1080p |
+| Frame time | 60 fps (16.7 ms) average, no frame over 50 ms after warm-up, in the largest region of a 500-issue world |
+| Quality tiers | low (reference machine), high (discrete GPU): resolution scale, shadow quality, post, and density scale; the look is designed for high and degrades gracefully |
+| Region load | under 250 ms, with no shader compiles after the first visit |
+
+Rules that keep the budget: repeated things (NPC bodies, props) are instanced or
+batched; one shadow-casting light, its shadow map refreshed only when needed; practical
+lights are emissive plus bloom, not real-time point lights; level of detail and
+impostors past mid distance; dynamic resolution on the low tier; a fixed light and
+material set per biome so shaders compile once. Baseline numbers and the harness live in
+`docs/perf.md`.
+
+**Engine.** three.js stays. Rendering moves to `WebGPURenderer` (with its WebGL2
+fallback) if a spike shows the post stack and shadows fit the budget there.
+
 ## NPCs and dialogue
 
 - Each NPC speaks **as the issue**, in first person, grounded only in the issue
@@ -211,7 +254,10 @@ This function is the second review surface. Change feel here, not in the client.
    longer explainable from the issue data, it is wrong.
 6. Deterministic output for the same input. Seeds, sorted keys, stable IDs.
 7. Nothing irreversible without a confirmation and an audit entry.
-8. Keep it runnable by an agent. No manual asset steps, no GUI-only tooling.
+8. Keep it runnable by an agent. No manual asset steps, no GUI-only tooling. Asset
+   generation is a scripted step with a manifest; playing never needs a generator key.
+9. Look is measured, not asserted. Visual changes come with screenshots scored on the
+   `threejs-aaa-graphics-builder` scorecard and frame times on the reference machine.
 
 ## Milestones
 
@@ -224,7 +270,9 @@ This function is the second review surface. Change feel here, not in the client.
 | M4 | Walk | first person movement through regions with HUD, minimap, map screen, doors and portals, from a fixture world |
 | M5 | Talk | NPCs render per issue, dialogue grounded in issue data, intent classified |
 | M6 | Act | comments and closes reach GitHub in live mode with confirmation, audit, undo, and the NPC leaves |
-| M7 | Feel | biome polish, voice, performance budget met at 500 issues |
+| M7 | Budget | render rules in "Look" applied; performance targets met at 500 issues on the reference machine with the look of the `docs/perf.md` baseline |
+| M8 | Look | asset kit and manifest, skinned and animated NPC forms, biome post stack; scorecard at the "Look" bar with M7 targets still met |
+| M9 | Feel | biome polish, motion, voice |
 
 ## On-track questions
 
@@ -234,9 +282,10 @@ Each pull request should be able to answer yes, or explain why not.
 2. Does it run on fixtures with no network and no keys?
 3. If it adds a judgment, is it a Jev question in `src/questions.ts` with a threshold?
 4. If it changes the look or feel, is the change expressed in the biome function or the graph, not hard-coded in the client?
-5. Is output deterministic for the same input?
-6. If it can write to GitHub, is it dry run by default, confirmed, audited, undoable?
-7. Does `make check` pass?
+5. If it changes rendering or assets, does it hold the frame budget on the reference machine, with numbers?
+6. Is output deterministic for the same input?
+7. If it can write to GitHub, is it dry run by default, confirmed, audited, undoable?
+8. Does `make check` pass?
 
 ## Decisions (2026-10-10)
 
@@ -249,6 +298,12 @@ Each pull request should be able to answer yes, or explain why not.
 | Closing without in-game confirmation | never from the game. Issues closed outside the game are picked up on the next ingest and their NPCs leave |
 | Web client packaging | `web/` as a second npm workspace with Vite and three.js |
 | Voice stack | Chromium Web Speech API for input and output first; ElevenLabs through OpenRouter for NPC voices if cost is acceptable, behind a flag |
-| Art direction | procedural low poly, flat shading, palette per biome; built and scored with the `threejs-*` skills (visual scorecard in `threejs-aaa-graphics-builder`) |
+| Art direction | ~~procedural low poly, flat shading~~ superseded 2026-10-10: current stylized game, Fortnite as the minimum (see "Look"); palette per biome; built and scored with the `threejs-*` skills |
+| Engine | three.js stays (2026-10-10). Profiling showed the cost is shadows, real-time point lights, fill rate, and non-instanced NPCs, all fixable in three (`docs/perf.md`); DOM over canvas remains the UI layer. Voxel or Minecraft-style direction rejected: it lowers the bar and is not faster by itself |
+| Assets | generated by scripted skills, checked in with a manifest; see "Look" |
+| Open: asset license | confirm each generator's output terms allow publishing in a public repo before the first asset lands (M8) |
+| Open: asset size and storage | size budget per asset and in total, manifest path and format, Git LFS threshold (M8) |
+| Open: quality tier | auto-detected from a startup benchmark, overridable in settings, or settings only (M7) |
+| Open: WebGPU | spike `WebGPURenderer` during M7; adopt only if it meets the budget with the M8 post stack |
 | Repo visibility | stays public; all data under `data/` is gitignored |
 | Jev model pin | latest `jev-1.x` at the time M1 lands, recorded in `src/questions.ts` |

@@ -44,6 +44,7 @@ npm run server -- --live           # confirmed in-game actions reach GitHub; aud
 | `src/server/` | Local HTTP API (`docs/api.md`): status, action, undo, dialogue; keys never reach the browser |
 | `web/` | Vite + three.js first-person client (npm workspace); proxies `/api` to the server |
 | `scripts/smoke.ts` | Live round trip; `SKIP` means a key is missing |
+| `scripts/perf/` | Frame-time harness and scaled test worlds; numbers in `docs/perf.md` |
 
 ## Rules
 
@@ -53,4 +54,4 @@ npm run server -- --live           # confirmed in-game actions reach GitHub; aud
 4. Run `make check` before committing.
 5. Pipeline outputs live under `data/` (gitignored). Never commit them.
 6. Before a PR: run `charter-check` and `qa-reviewer`; `graph-auditor` for data-model changes, `playtester` for `web/`, `writeback-safety` for anything that can mutate GitHub.
-7. Any work under `web/` goes through the `threejs-*` skills (`.agents/skills/`): `threejs-game-director` to scope, `threejs-gameplay-systems` for controls/camera/feel, `threejs-aaa-graphics-builder` for visuals (score with its 10-category scorecard), `threejs-game-ui-designer` for HUD and menus, `threejs-debug-profiler` for bugs and budgets, `threejs-qa-release` for evidence (`scripts/inspect-threejs-canvas.mjs`). Art direction stays procedural low poly (charter); the generator skills need `TRIPO_API_KEY`, `GEMINI_API_KEY`, or `ELEVENLABS_API_KEY` and are opt-in.
+7. Any work under `web/` goes through the `threejs-*` skills (`.agents/skills/`): `threejs-game-director` to scope, `threejs-gameplay-systems` for controls/camera/feel, `threejs-aaa-graphics-builder` for visuals (score with its 10-category scorecard), `threejs-game-ui-designer` for HUD and menus, `threejs-debug-profiler` for bugs and budgets, `threejs-qa-release` for evidence (`scripts/inspect-threejs-canvas.mjs`). The look bar, asset rules, and frame budget are in the charter ("Look"); measure with `scripts/perf/` (`docs/perf.md`). The generator skills need `TRIPO_API_KEY`, `GEMINI_API_KEY`, or `ELEVENLABS_API_KEY`; generated assets are checked in with a manifest so playing never needs a key.

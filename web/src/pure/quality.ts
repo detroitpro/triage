@@ -36,11 +36,14 @@ export const PROFILES: Record<Tier, QualityProfile> = {
 
 /** Integrated, mobile, and software GPUs start on the low tier. */
 const LOW_GPU =
-  /intel|mali|adreno|powervr|videocore|llvmpipe|swiftshader|software|microsoft basic/i;
+  /intel|mali|adreno|powervr|videocore|llvmpipe|swiftshader|software|microsoft basic|apple gpu/i;
+/** Discrete parts whose vendor also makes integrated GPUs. */
+const HIGH_GPU = /intel(\(r\))? arc/i;
 
-/** Tier for "auto": from the unmasked WebGL renderer string, when the browser exposes one. */
+/** Tier for "auto": from the WebGL renderer string, when the browser exposes one. */
 export function detectTier(renderer: string | null): Tier {
   if (!renderer) return "low";
+  if (HIGH_GPU.test(renderer)) return "high";
   return LOW_GPU.test(renderer) ? "low" : "high";
 }
 
@@ -59,11 +62,21 @@ export const TARGET_MS = 1000 / 60;
  */
 export class DynamicResolution {
   scale: number;
-  private ema = TARGET_MS;
+  private ema: number = TARGET_MS;
   private overFor = 0;
   private okFor = 0;
   private probeWait: number;
   private sinceProbe = Number.POSITIVE_INFINITY;
+
+  /**
+   * Frame budget in ms. Starts at 16.7. If frames at the minimum scale are no faster than
+   * they were at full scale, pixels are not what limits them (a 30 or 50 Hz display, a
+   * battery cap, or the CPU): the budget becomes the observed frame time and the scale goes
+   * back to full, since the lower resolution bought nothing visible.
+   */
+  private target = TARGET_MS;
+  private emaAtFull: number | null = null;
+  private atFloorFor = 0;
 
   constructor(
     private readonly min: number,
@@ -78,6 +91,9 @@ export class DynamicResolution {
 
   /** The scene changed (new area): forget the probe back-off. */
   reset(): void {
+    // A new area starts sharp; the controller drops again within half a second if needed.
+    this.scale = this.max;
+    this.ema = this.target;
     this.probeWait = this.probeAfter;
     this.overFor = 0;
     this.okFor = 0;
@@ -90,20 +106,32 @@ export class DynamicResolution {
     this.ema += (frameMs - this.ema) * 0.1;
     const dt = frameMs / 1000;
     this.sinceProbe += dt;
-    if (this.ema > TARGET_MS * 1.15) {
+    if (this.ema > this.target * 1.15) {
       this.overFor += dt;
       this.okFor = 0;
     } else {
       this.overFor = 0;
       this.okFor += dt;
     }
+    if (this.scale <= this.min && this.ema > this.target * 1.15) {
+      this.atFloorFor += dt;
+      if (this.atFloorFor > 1.5 && this.emaAtFull !== null && this.ema > this.emaAtFull * 0.95) {
+        this.target = Math.max(TARGET_MS, this.ema * 1.02);
+        this.scale = this.max;
+        this.atFloorFor = 0;
+        this.overFor = 0;
+        this.emaAtFull = null;
+        return true;
+      }
+    } else this.atFloorFor = 0;
     if (this.overFor > 0.5 && this.scale > this.min) {
+      if (this.scale >= this.max) this.emaAtFull = this.ema;
       // A drop right after a probe means the probe failed: undo it and wait longer next time.
       const failedProbe = this.sinceProbe < 2;
       if (failedProbe) this.probeWait = Math.min(this.probeWait * 2, 120);
       this.scale = Math.max(this.min, round(this.scale - this.step * (failedProbe ? 1 : 2)));
       this.overFor = 0;
-      this.ema = TARGET_MS;
+      this.ema = this.target;
       return true;
     }
     if (this.okFor > this.probeWait && this.scale < this.max) {

@@ -59,14 +59,16 @@ export interface TriageDebug {
 
 /** The unmasked GPU name, when the browser exposes it; used only to pick the "auto" tier. */
 function gpuName(): string | null {
+  const gl = document.createElement("canvas").getContext("webgl2");
+  if (!gl) return null;
   try {
-    const gl = document.createElement("canvas").getContext("webgl2");
-    const ext = gl?.getExtension("WEBGL_debug_renderer_info");
-    const name = ext ? (gl?.getParameter(ext.UNMASKED_RENDERER_WEBGL) as string) : null;
-    gl?.getExtension("WEBGL_lose_context")?.loseContext();
-    return name;
+    const ext = gl.getExtension("WEBGL_debug_renderer_info");
+    // Firefox exposes the real name through RENDERER and has no debug extension.
+    return String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER) ?? "") || null;
   } catch {
     return null;
+  } finally {
+    gl.getExtension("WEBGL_lose_context")?.loseContext();
   }
 }
 
@@ -327,6 +329,8 @@ export class Game {
       this.verbs.keyDown(e, true);
       return;
     }
+    // Tab moves focus inside the settings panel; everywhere else it opens the map.
+    if (e.code === "Tab" && !this.overlays.settings.classList.contains("hidden")) return;
     if (e.code === "Tab") {
       e.preventDefault();
       if (this.map.open) this.map.hide();

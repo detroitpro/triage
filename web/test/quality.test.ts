@@ -47,8 +47,15 @@ describe("DynamicResolution", () => {
 
   it("never goes below its minimum", () => {
     const dr = new DynamicResolution(0.6, 1);
-    run(dr, 20, () => 40);
+    // Pixel-bound and still over budget at the floor.
+    run(dr, 20, (sc) => 60 * sc * sc);
     expect(dr.scale).toBe(0.6);
+  });
+
+  it("goes back to full scale when lowering it does not help (CPU-bound)", () => {
+    const dr = new DynamicResolution(0.6, 1);
+    run(dr, 20, () => 25);
+    expect(dr.scale).toBe(1);
   });
 
   it("stays at full scale when there is headroom", () => {
@@ -59,7 +66,7 @@ describe("DynamicResolution", () => {
 
   it("probes back up after load drops, and backs off from a probe that fails", () => {
     const dr = new DynamicResolution(0.6, 1);
-    run(dr, 6, () => 40);
+    run(dr, 6, (sc) => 100 * sc * sc);
     expect(dr.scale).toBe(0.6);
     run(dr, 60, () => 8);
     expect(dr.scale).toBe(1);
@@ -83,6 +90,31 @@ describe("DynamicResolution", () => {
   it("ignores stalls", () => {
     const dr = new DynamicResolution(0.6, 1);
     for (let i = 0; i < 10; i++) dr.update(400);
+    expect(dr.scale).toBe(1);
+  });
+});
+
+describe("tier and refresh edge cases", () => {
+  it("treats Intel Arc as discrete and Apple mobile GPUs as low", () => {
+    expect(detectTier("ANGLE (Intel, Intel(R) Arc(TM) A770 Graphics Direct3D11)")).toBe("high");
+    expect(detectTier("Apple GPU")).toBe("low");
+  });
+
+  it("does not sit at the floor on a display capped at 30 fps", () => {
+    const dr = new DynamicResolution(0.6, 1);
+    for (let i = 0; i < 600; i++) dr.update(33.4);
+    expect(dr.scale).toBe(1);
+  });
+
+  it("starts each area at full scale", () => {
+    const dr = new DynamicResolution(0.6, 1);
+    let ms = 40;
+    for (let i = 0; i < 300; i++) {
+      dr.update(ms);
+      ms = 40 * dr.scale * dr.scale;
+    }
+    expect(dr.scale).toBeLessThan(1);
+    dr.reset();
     expect(dr.scale).toBe(1);
   });
 });

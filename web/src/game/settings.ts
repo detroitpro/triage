@@ -117,7 +117,8 @@ export function mountSettings(
           <option value="low" ${settings.quality === "low" ? "selected" : ""}>Low</option>
           <option value="high" ${settings.quality === "high" ? "selected" : ""}>High</option>
         </select></span>
-        <span class="desc">Low renders at a lower resolution that adapts to hold 60 fps. Reloads the page.</span>
+        <span class="desc">Low renders at a lower resolution that adapts to hold 60 fps.
+          <button type="button" id="s-quality-apply" class="apply" hidden>Apply and reload</button></span>
       </label>
       ${rows}
       <label class="setting">
@@ -147,8 +148,14 @@ export function mountSettings(
     onChange(settings);
   };
   const quality = root.querySelector<HTMLSelectElement>("#s-quality");
+  // A change only takes effect on reload (MSAA is per context), so it waits for Apply:
+  // arrow keys on a closed select fire "change" on every step.
+  const apply = root.querySelector<HTMLButtonElement>("#s-quality-apply");
   quality?.addEventListener("change", () => {
-    const v = quality.value;
+    if (apply) apply.hidden = quality.value === settings.quality;
+  });
+  apply?.addEventListener("click", () => {
+    const v = quality?.value;
     settings.quality = v === "low" || v === "high" ? v : "auto";
     saveSettings(settings);
     window.location.reload();

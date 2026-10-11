@@ -4,6 +4,7 @@ import type { Biome } from "../../../src/world/types.ts";
 import {
   cobbles,
   flagstones,
+  grass,
   hazardStripes,
   steelPlate,
   windowStrip,
@@ -233,6 +234,7 @@ export function getMaterialLibrary(biome: Biome): MaterialLibrary {
     else if (kind === "dungeon") groundMat.map = flagstones();
     else if (kind === "industrial") groundMat.map = steelPlate();
     else if (kind === "plaza") groundMat.map = cobbles();
+    else if (kind === "meadow") groundMat.map = grass();
     if (groundMat.map) groundMat.color = shift(ground, 0, 0, dark ? 0.12 : 0.08);
   }
 

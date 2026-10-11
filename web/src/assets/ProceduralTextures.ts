@@ -121,6 +121,39 @@ export function cobbles(): THREE.Texture {
   });
 }
 
+/**
+ * Stylized grass: a light, near-neutral field of short brush strokes in a few values, tinted
+ * by the ground colour. Strokes wrap at the edges so the tile repeats without seams.
+ */
+export function grass(): THREE.Texture {
+  return canvasTexture("grass", 256, (ctx, s) => {
+    const rand = mulberry32(11);
+    ctx.fillStyle = "#c9cfc2";
+    ctx.fillRect(0, 0, s, s);
+    ctx.lineCap = "round";
+    for (let i = 0; i < 2600; i++) {
+      const x = rand() * s;
+      const y = rand() * s;
+      const len = 4 + rand() * 9;
+      const lean = (rand() - 0.5) * 0.9;
+      const v = 172 + Math.floor(rand() * 72);
+      ctx.strokeStyle = `rgb(${v - 12},${v},${v - 22})`;
+      ctx.lineWidth = 1 + rand() * 1.6;
+      for (const [dx, dy] of [
+        [0, 0],
+        [-s, 0],
+        [0, -s],
+        [-s, -s],
+      ] as const) {
+        ctx.beginPath();
+        ctx.moveTo(x + dx, y + dy);
+        ctx.lineTo(x + dx + lean * len, y + dy - len);
+        ctx.stroke();
+      }
+    }
+  });
+}
+
 /** Large flagstones with dark grout for dungeon floors. */
 export function flagstones(): THREE.Texture {
   return canvasTexture("flagstones", 256, (ctx, s) => {

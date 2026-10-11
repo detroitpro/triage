@@ -16,14 +16,31 @@ export function buildGround(b: Bounds, lib: MaterialLibrary, seed: number): THRE
   const base = lib.get("ground");
   const segX = Math.max(4, Math.round(b.w / 2));
   const segZ = Math.max(4, Math.round(b.d / 2));
-  const g = new THREE.PlaneGeometry(b.w, b.d, segX, segZ).toNonIndexed();
+  // Outdoors the tint is smooth (indexed, per vertex): broad lighter and darker patches with a
+  // slight hue drift, so grass reads as a field, not a mosaic of triangles. Paved floors keep
+  // a per-tile tint, which reads as individual stones.
+  const smooth = lib.kind === "meadow";
+  const plane = new THREE.PlaneGeometry(b.w, b.d, segX, segZ);
+  const g = smooth ? plane : plane.toNonIndexed();
   g.rotateX(-Math.PI / 2);
   const pos = g.attributes.position;
   const colors = new Float32Array(pos ? pos.count * 3 : 0);
   const rand = mulberry32(seed);
   const c = new THREE.Color();
   const jitter = lib.kind === "meadow" || lib.kind === "plaza" ? 0.07 : 0.045;
-  if (pos) {
+  if (pos && smooth) {
+    const cx = b.x + b.w / 2;
+    const cz = b.z + b.d / 2;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i) + cx;
+      const z = pos.getZ(i) + cz;
+      const patch = noise2(x * 0.06 + seed * 0.001, z * 0.06) - 0.5;
+      const fine = noise2(x * 0.31, z * 0.31) - 0.5;
+      c.set(0xd9d9d9);
+      c.offsetHSL(patch * 0.03, patch * 0.12, patch * 0.16 + fine * 0.05);
+      colors.set([c.r, c.g, c.b], i * 3);
+    }
+  } else if (pos) {
     for (let i = 0; i < pos.count; i += 3) {
       c.set(0xd9d9d9);
       c.offsetHSL(0, 0, (rand() - 0.5) * jitter);
@@ -118,7 +135,8 @@ function hills(b: Bounds, lib: MaterialLibrary, seed: number): THREE.Mesh {
   const w = b.w + 2 * R;
   const d = b.d + 2 * R;
   const seg = 56;
-  const g = new THREE.PlaneGeometry(w, d, seg, seg).toNonIndexed();
+  // Indexed and smooth-shaded: rolling hills, not facets.
+  const g = new THREE.PlaneGeometry(w, d, seg, seg);
   g.rotateX(-Math.PI / 2);
   const cx = b.x + b.w / 2;
   const cz = b.z + b.d / 2;
@@ -133,20 +151,18 @@ function hills(b: Bounds, lib: MaterialLibrary, seed: number): THREE.Mesh {
       const z = pos.getZ(i) + cz;
       pos.setY(i, heightOutside(x, z, b, seed) - 0.05);
     }
-    for (let i = 0; i < pos.count; i += 3) {
-      const y = (pos.getY(i) + pos.getY(i + 1) + pos.getY(i + 2)) / 3;
+    for (let i = 0; i < pos.count; i++) {
+      const y = pos.getY(i);
+      const x = pos.getX(i) + cx;
+      const z = pos.getZ(i) + cz;
       c.copy(low).lerp(high, THREE.MathUtils.clamp(y / 9, 0, 1));
-      c.offsetHSL(0, 0, (noise2(i * 0.37, i * 0.11) - 0.5) * 0.08);
-      for (let k = 0; k < 3; k++) colors.push(c.r, c.g, c.b);
+      c.offsetHSL(0, 0, (noise2(x * 0.05, z * 0.05) - 0.5) * 0.1);
+      colors.push(c.r, c.g, c.b);
     }
   }
   g.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
   g.computeVertexNormals();
-  const mat = new THREE.MeshStandardMaterial({
-    vertexColors: true,
-    flatShading: true,
-    roughness: 1,
-  });
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 });
   const mesh = new THREE.Mesh(g, mat);
   mesh.position.set(cx, 0, cz);
   mesh.receiveShadow = true;

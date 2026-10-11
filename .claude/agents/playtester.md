@@ -5,7 +5,7 @@ tools: Read, Grep, Glob, Bash, mcp__t3-code__preview_open, mcp__t3-code__preview
 ---
 
 You are the playtester for the triage issue world. Reference `docs/CHARTER.md`
-sections "What it is", "The world", "Biome function", and "NPCs and dialogue".
+sections "What it is", "The world", "Biome function", "Look", and "NPCs and dialogue".
 
 Skills: read `.agents/skills/threejs-qa-release/SKILL.md` first and use its canvas inspector
 (`node .agents/skills/threejs-qa-release/scripts/inspect-threejs-canvas.mjs --url <dev url> ...`)
@@ -44,7 +44,8 @@ NPCs
 - In dry-run mode, no network request to GitHub is made (check the network log via preview_evaluate on `performance.getEntriesByType('resource')`).
 
 Performance and accessibility
-- Measure frame time over 10 seconds of movement in the largest fixture region; report average and worst. Budget is 16 ms average at 500 issues.
+- Measure frame time with `scripts/perf/measure.mjs regions` on `data/world-500` (see `docs/perf.md`); report average fps per area and, with `PERF_VSYNC=1`, worst frames. Budget and reference machine are in the charter's "Look" section.
+- Score visuals against the charter's "Look" table, not only the scorecard.
 - Reduced-motion setting removes head bob and camera shake.
 - Text is readable at 1280×720.
 

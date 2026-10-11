@@ -56,16 +56,21 @@ minimap dots; pressure is the biome and locked doors (`doors.ts`); reward change
 
 ## Art direction
 
-Procedural low poly, flat shading, one authored kit per biome, materials as named roles
+> Superseded in part (2026-10-10): the bar is now a current stylized game, Fortnite as the
+> minimum; see the charter's "Look" section. The kits and material roles below still apply;
+> flat shading and low poly do not. Light stacks follow the charter's render rules: one key
+> light per biome, practicals are emissive plus bloom, not real-time lights.
+
+One kit per biome, materials as named roles
 shared across kits (`groundContact`, `bodyPrimary`, `trim`, `hazard`, `emissiveSignal`,
 `glass`, `decalDark`). UI colors come from the current biome palette. Four biomes:
 
 | Biome | Kit | Light stack |
 |-------|-----|-------------|
-| sunlit meadow | layered trees, faceted rocks, grass cards, flowers, split-rail fence, far hills | warm key, sky fill, rim, soft shadows |
-| village workshop | timber-frame walls, lit windows, market stalls, crates, lanterns, cobble decals, roof silhouettes beyond | warm key through windows, lantern practicals |
-| industrial complex | pipes, tanks, gantries, hazard stripes, caged lamps, ducts, chain-link | cool key, sodium practicals, rim |
-| dungeon | stone block walls with trim, torches with flicker, chains, bones, pillars, drips | torch practicals only, low fill, strong rim on NPCs |
+| sunlit meadow | layered trees, rocks, grass cards, flowers, split-rail fence, far hills | warm key, sky fill, rim, soft shadows |
+| village workshop | timber-frame walls, lit windows, market stalls, crates, lanterns, cobble decals, roof silhouettes beyond | warm key through windows, emissive lanterns |
+| industrial complex | pipes, tanks, gantries, hazard stripes, caged lamps, ducts, chain-link | cool key, emissive sodium lamps, rim |
+| dungeon | stone block walls with trim, torches with flicker, chains, bones, pillars, drips | dim cool key, emissive torches with bloom, low fill, strong rim on NPCs |
 
 NPC forms are authored silhouettes recognizable as dark shapes: creature (round body, ears,
 feet, tail), villager (body, head, hat, apron, satchel), worker (helmet, visor, vest, tool),

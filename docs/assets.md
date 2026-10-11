@@ -27,6 +27,7 @@ Meshy Terms of Use (https://www.meshy.ai/terms-of-use), as read on 2026-10-11:
   none (their generator field is Blender's glTF exporter), so packing removes nothing.
 - §2.6: generated assets must not be used to train competing AI models.
 
-The four characters were generated on 2026-10-11 on the account behind `MESHY_API_KEY`, which
-had a monthly allowance of 1,100 credits (a paid plan). If that plan lapses, assets generated
-afterwards fall under the free-plan terms.
+The four characters were generated on 2026-10-11 on the account behind `MESHY_API_KEY`, a paid
+Meshy plan (confirmed by the account owner on 2026-10-11), so the output is ours under §3.2 and
+needs no attribution. If that plan lapses, assets generated afterwards fall under the free-plan
+terms and need attribution.

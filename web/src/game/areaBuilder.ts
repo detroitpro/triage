@@ -227,8 +227,11 @@ export function disposeArea(built: BuiltArea): void {
       }
     }
     if (obj instanceof THREE.InstancedMesh) obj.dispose();
+    // Each rendered SkinnedMesh owns a bone texture; skeletons are per NPC clone.
+    if (obj instanceof THREE.SkinnedMesh) obj.skeleton.dispose();
     if (obj instanceof THREE.DirectionalLight) obj.shadow.dispose();
   });
+  for (const h of built.npcs.values()) h.authored.character?.dispose();
   built.group.removeFromParent();
 }
 

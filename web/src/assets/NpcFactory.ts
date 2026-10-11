@@ -1,6 +1,12 @@
 import * as THREE from "three";
 import type { LabelMeta, NpcForm } from "../../../src/world/types.ts";
 import { contextLabel, labelColor, type TokenShape, tokenShape } from "../pure/satchel.ts";
+import {
+  type CharacterInstance,
+  type CharacterTemplate,
+  characterTemplate,
+  instantiateCharacter,
+} from "./CharacterKit.ts";
 import type { MaterialLibrary, MaterialRole } from "./MaterialLibrary.ts";
 import { geo, merged } from "./WorldPropKit.ts";
 
@@ -18,6 +24,10 @@ export interface NpcBody {
   /** Floating forms hover; their base height is animated instead of bobbing in place. */
   floats: boolean;
   form: NpcForm;
+  /** Generated, skinned character driving this body (instead of joint wobble), when the kit has one. */
+  character?: CharacterInstance;
+  /** Badge placement for bodies without the authored joints (generated characters). */
+  badgeRig?: BadgeRig;
 }
 
 type Builder = (lib: MaterialLibrary) => Omit<NpcBody, "form">;
@@ -371,12 +381,63 @@ const shade: Builder = (lib) => {
 
 const BUILDERS: Record<NpcForm, Builder> = { creature, villager, worker, shade };
 
-export function buildNpcBody(form: NpcForm, lib: MaterialLibrary): NpcBody {
+export function buildNpcBody(form: NpcForm, lib: MaterialLibrary, phase = 0): NpcBody {
+  const template = characterTemplate(form);
+  if (template) return generatedBody(form, lib, instantiateCharacter(template, phase), template);
   return { ...(BUILDERS[form] ?? villager)(lib), form };
+}
+
+/** A generated character in the NpcBody slot: same badges, signal, and label contract. */
+function generatedBody(
+  form: NpcForm,
+  lib: MaterialLibrary,
+  character: CharacterInstance,
+  template: CharacterTemplate,
+): NpcBody {
+  const root = new THREE.Group();
+  root.name = `generated-${form}`;
+  const body = new THREE.Group();
+  body.name = "bodyJoint";
+  root.add(body);
+  body.add(character.root);
+  const h = template.height;
+  const front = -template.frontZ;
+  // The reviewed signal floats above the head, where every form keeps it readable.
+  const signal = mesh(
+    "signal.gem",
+    () => new THREE.OctahedronGeometry(0.1),
+    "decalDark",
+    lib,
+    0,
+    h + 0.18,
+    0,
+  );
+  signal.name = "signal";
+  body.add(signal);
+  const badgeRig: BadgeRig = {
+    chest: [0, h * 0.6, front - 0.02],
+    cols: 3,
+    band: { y: h * 0.94, r: Math.max(0.12, template.headRadius), h: 0.07 },
+    tabard: [0, h * 0.46, front - 0.01, 0.42, 0.22, 0.03],
+  };
+  return {
+    root,
+    joints: { body },
+    signal,
+    labelHeight: h + 0.55,
+    floats: form === "shade",
+    form,
+    character,
+    badgeRig,
+  };
 }
 
 /** Idle motion per form; `t` is seconds, `phase` 0..1 per NPC. */
 export function animateNpcBody(body: NpcBody, form: NpcForm, t: number, phase: number): void {
+  if (body.character) {
+    body.character.update(t);
+    return;
+  }
   const j = body.joints;
   const w = t * 2 + phase * Math.PI * 2;
   const s = Math.sin(w);
@@ -547,7 +608,7 @@ export function setBadges(
   labelSet: readonly LabelMeta[],
   ghostLabels: readonly string[] = [],
 ): void {
-  const rig = RIGS[body.form] ?? RIGS.villager;
+  const rig = body.badgeRig ?? RIGS[body.form] ?? RIGS.villager;
   const group = badgesGroup(body);
   group.userData.labels = { solid: [...labels], ghost: [...ghostLabels] };
   const all: { name: string; ghost: boolean }[] = [

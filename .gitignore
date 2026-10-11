@@ -13,3 +13,6 @@ coverage/
 
 # pipeline outputs (issue data from possibly private repos)
 data/
+
+# raw generator outputs (Tripo/Gemini downloads, checkpoints); only compressed assets are committed
+asset-work/

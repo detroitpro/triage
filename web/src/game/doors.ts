@@ -279,43 +279,50 @@ function buildFrame(
   // The lamp must read as "blocked" from either side before the label is legible: a red
   // glow card on each face of the lintel and a faint red wash over the doorway.
   const glow = makeGlowSprite(LOCK_RED, 1.4);
+  glow.material = lockGlowMaterial(glow.material, 0.9);
   glow.position.set(0, 4.05, 0.4);
   group.add(glow);
   const back = makeGlowSprite(LOCK_RED, 1.4);
+  back.material = glow.material;
   back.position.set(0, 4.05, -0.4);
   group.add(back);
   glow.userData.pair = back;
   for (const z of [0.6, -0.6]) {
     const wash = makeGlowSprite(LOCK_RED, 3.4);
-    wash.material = lockWashMaterial(wash.material);
+    wash.material = lockGlowMaterial(wash.material, 0.32);
     wash.position.set(0, 2.3, z);
     group.add(wash);
   }
   return { signal, glow };
 }
 
-const LOCK_RED = "#ff3b2a";
+// Signal red, kept out of tone mapping: ACES pushes bright red toward the torches' orange.
+const LOCK_RED = "#ff1020";
 let lockLamp: THREE.MeshStandardMaterial | null = null;
 function lockLampMaterial(): THREE.MeshStandardMaterial {
   if (!lockLamp) {
     lockLamp = new THREE.MeshStandardMaterial({
       color: LOCK_RED,
       emissive: LOCK_RED,
-      emissiveIntensity: 2.2,
+      emissiveIntensity: 1,
       roughness: 0.4,
+      toneMapped: false,
     });
     lockLamp.userData.shared = true;
   }
   return lockLamp;
 }
-let lockWash: THREE.SpriteMaterial | null = null;
-function lockWashMaterial(base: THREE.SpriteMaterial): THREE.SpriteMaterial {
-  if (!lockWash) {
-    lockWash = base.clone();
-    lockWash.opacity = 0.32;
-    lockWash.userData.shared = true;
+const lockGlows = new Map<number, THREE.SpriteMaterial>();
+function lockGlowMaterial(base: THREE.SpriteMaterial, opacity: number): THREE.SpriteMaterial {
+  let m = lockGlows.get(opacity);
+  if (!m) {
+    m = base.clone();
+    m.opacity = opacity;
+    m.toneMapped = false;
+    m.userData.shared = true;
+    lockGlows.set(opacity, m);
   }
-  return lockWash;
+  return m;
 }
 
 export function buildDoor(

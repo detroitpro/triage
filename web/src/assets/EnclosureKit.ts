@@ -35,10 +35,13 @@ export function buildGround(b: Bounds, lib: MaterialLibrary, seed: number): THRE
       const x = pos.getX(i) + cx;
       const z = pos.getZ(i) + cz;
       const patch = noise2(x * 0.06 + seed * 0.001, z * 0.06) - 0.5;
-      const fine = noise2(x * 0.31, z * 0.31) - 0.5;
+      // Medium noise at a scale the 2 m mesh can show; the texture carries the fine detail.
+      const medium = noise2(x * 0.12, z * 0.12) - 0.5;
       c.set(0xd9d9d9);
-      c.offsetHSL(patch * 0.03, patch * 0.12, patch * 0.16 + fine * 0.05);
-      colors.set([c.r, c.g, c.b], i * 3);
+      c.offsetHSL(patch * 0.03, patch * 0.12, patch * 0.16 + medium * 0.05);
+      colors[i * 3] = c.r;
+      colors[i * 3 + 1] = c.g;
+      colors[i * 3 + 2] = c.b;
     }
   } else if (pos) {
     for (let i = 0; i < pos.count; i += 3) {
@@ -142,7 +145,10 @@ function hills(b: Bounds, lib: MaterialLibrary, seed: number): THREE.Mesh {
   const cz = b.z + b.d / 2;
   const pos = g.attributes.position;
   const colors: number[] = [];
-  const low = lib.get("ground").color.clone();
+  // A textured ground (meadow grass) reads darker than its colour; match the hills to it so
+  // the fence line is not a material change.
+  const ground = lib.get("ground");
+  const low = ground.color.clone().multiplyScalar(ground.map ? 0.7 : 1);
   const high = lib.get("foliageDark").color.clone();
   const c = new THREE.Color();
   if (pos) {

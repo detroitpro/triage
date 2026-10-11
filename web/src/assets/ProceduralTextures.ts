@@ -139,17 +139,14 @@ export function grass(): THREE.Texture {
       const v = 172 + Math.floor(rand() * 72);
       ctx.strokeStyle = `rgb(${v - 12},${v},${v - 22})`;
       ctx.lineWidth = 1 + rand() * 1.6;
-      for (const [dx, dy] of [
-        [0, 0],
-        [-s, 0],
-        [0, -s],
-        [-s, -s],
-      ] as const) {
-        ctx.beginPath();
-        ctx.moveTo(x + dx, y + dy);
-        ctx.lineTo(x + dx + lean * len, y + dy - len);
-        ctx.stroke();
-      }
+      // All nine wraps: a stroke can cross any edge (it rises and may lean either way).
+      for (const dx of [-s, 0, s])
+        for (const dy of [-s, 0, s]) {
+          ctx.beginPath();
+          ctx.moveTo(x + dx, y + dy);
+          ctx.lineTo(x + dx + lean * len, y + dy - len);
+          ctx.stroke();
+        }
     }
   });
 }

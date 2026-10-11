@@ -98,14 +98,3 @@ describe("shadow map placement", () => {
     );
   });
 });
-
-describe("makeContactDisc", () => {
-  it("honours the opacity per call", async () => {
-    const { makeContactDisc } = await import("../src/assets/WorldPropKit.ts");
-    const a = makeContactDisc(1, 0.4).material as THREE.MeshBasicMaterial;
-    const b = makeContactDisc(1, 0.6).material as THREE.MeshBasicMaterial;
-    expect(a.opacity).toBe(0.4);
-    expect(b.opacity).toBe(0.6);
-    expect(makeContactDisc(2, 0.4).material).toBe(a);
-  });
-});

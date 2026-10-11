@@ -1,3 +1,4 @@
+import { preloadCharacters } from "./assets/CharacterKit.ts";
 import { Game } from "./game/game.ts";
 import { loadWorld } from "./load.ts";
 import { resolveWorldQuery } from "./pure/worldUrl.ts";
@@ -6,7 +7,8 @@ async function boot(): Promise<void> {
   const canvas = document.getElementById("view") as HTMLCanvasElement | null;
   if (!canvas) throw new Error("missing #view canvas");
   const query = resolveWorldQuery(window.location.search);
-  const loaded = await loadWorld(query.url);
+  // Generated characters load alongside the world; any that fail keep their procedural body.
+  const [loaded] = await Promise.all([loadWorld(query.url), preloadCharacters()]);
   const game = new Game(loaded.world, canvas);
   game.start(query.region);
   if (loaded.fallback) {

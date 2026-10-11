@@ -56,7 +56,7 @@ export function buildNpc(
   const group = new THREE.Group();
   group.name = `npc-${p.issue}`;
   group.position.set(p.position[0], p.position[1], p.position[2]);
-  const authored: NpcBody = buildNpcBody(p.form, library);
+  const authored: NpcBody = buildNpcBody(p.form, library, (p.issue % 17) / 17);
   const body = authored.root;
   body.name = "body";
   body.scale.setScalar(p.scale);

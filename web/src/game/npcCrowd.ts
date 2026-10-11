@@ -16,7 +16,8 @@ import type { NpcHandle } from "./npc.ts";
  */
 export class NpcCrowd {
   readonly group = new THREE.Group();
-  private bodies = new Map<NpcForm, THREE.InstancedMesh>();
+  /** One instanced mesh per material in the form's baked body (one for procedural forms). */
+  private bodies = new Map<NpcForm, THREE.InstancedMesh[]>();
   /** Contact discs by opacity: floating forms ground more softly than standing ones. */
   private discs = new Map<number, THREE.InstancedMesh>();
   private capacity: number;
@@ -32,13 +33,16 @@ export class NpcCrowd {
     this.capacity = capacity;
     const forms = new Set([...npcs.values()].map((h) => h.form));
     for (const form of forms) {
-      const mesh = new THREE.InstancedMesh(bakedBody(form, lib), crowdMaterial(lib), capacity);
-      mesh.name = `crowd-${form}`;
-      mesh.count = 0;
-      // The instances span the whole region; per-instance culling is not worth the CPU.
-      mesh.frustumCulled = false;
-      this.bodies.set(form, mesh);
-      this.group.add(mesh);
+      const parts = bakedBody(form, lib).map((part, i) => {
+        const mesh = new THREE.InstancedMesh(part.geometry, part.material, capacity);
+        mesh.name = `crowd-${form}-${i}`;
+        mesh.count = 0;
+        // The instances span the whole region; per-instance culling is not worth the CPU.
+        mesh.frustumCulled = false;
+        this.group.add(mesh);
+        return mesh;
+      });
+      this.bodies.set(form, parts);
     }
     for (const h of npcs.values()) {
       const material = h.disc.material as THREE.MeshBasicMaterial;
@@ -72,15 +76,15 @@ export class NpcCrowd {
       h.disc.visible = !far;
       h.label.visible = lod.label;
       if (!far || !h.group.parent) continue;
-      const mesh = this.bodies.get(h.form);
-      if (!mesh) continue;
+      const parts = this.bodies.get(h.form);
+      if (!parts) continue;
       h.group.updateWorldMatrix(true, false);
       // Instance = the NPC group's world transform times the body's own (scale, float).
       this.m.multiplyMatrices(h.group.matrixWorld, h.body.matrix);
       const i = counts.get(h.form) ?? 0;
       // Capacity is the region's NPC count at build time; nothing adds NPCs after that.
       if (i >= this.capacity) continue;
-      mesh.setMatrixAt(i, this.m);
+      for (const mesh of parts) mesh.setMatrixAt(i, this.m);
       counts.set(h.form, i + 1);
       const opacity = (h.disc.material as THREE.MeshBasicMaterial).opacity;
       const discs = this.discs.get(opacity);
@@ -90,10 +94,11 @@ export class NpcCrowd {
       discs.setMatrixAt(j, this.m);
       discCounts.set(opacity, j + 1);
     }
-    for (const [form, mesh] of this.bodies) {
-      mesh.count = counts.get(form) ?? 0;
-      mesh.instanceMatrix.needsUpdate = true;
-    }
+    for (const [form, parts] of this.bodies)
+      for (const mesh of parts) {
+        mesh.count = counts.get(form) ?? 0;
+        mesh.instanceMatrix.needsUpdate = true;
+      }
     for (const [opacity, discs] of this.discs) {
       discs.count = discCounts.get(opacity) ?? 0;
       discs.instanceMatrix.needsUpdate = true;
@@ -102,10 +107,20 @@ export class NpcCrowd {
   }
 }
 
-const baked = new WeakMap<MaterialLibrary, Map<NpcForm, THREE.BufferGeometry>>();
+interface BakedPart {
+  geometry: THREE.BufferGeometry;
+  material: THREE.Material;
+}
 
-/** One geometry per form and library: the rest pose, each part coloured by its material. */
-function bakedBody(form: NpcForm, lib: MaterialLibrary): THREE.BufferGeometry {
+const baked = new WeakMap<MaterialLibrary, Map<NpcForm, BakedPart[]>>();
+
+/**
+ * The far body for a form and library, posed once. Procedural forms merge into one
+ * vertex-coloured mesh. Generated characters are posed at their idle clip's first frame
+ * (never the T-pose they were rigged in) and keep their own textured materials, one part
+ * per material.
+ */
+function bakedBody(form: NpcForm, lib: MaterialLibrary): BakedPart[] {
   let byForm = baked.get(lib);
   if (!byForm) {
     byForm = new Map();
@@ -113,19 +128,46 @@ function bakedBody(form: NpcForm, lib: MaterialLibrary): THREE.BufferGeometry {
   }
   const hit = byForm.get(form);
   if (hit) return hit;
-  const body = buildNpcBody(form, lib).root;
+  const built = buildNpcBody(form, lib);
+  const body = built.root;
+  if (built.character) {
+    built.character.mixer.update(0);
+    built.character.update(0);
+  }
   body.updateMatrixWorld(true);
-  const parts: THREE.BufferGeometry[] = [];
+  const flat: THREE.BufferGeometry[] = [];
+  const textured = new Map<THREE.Material, THREE.BufferGeometry[]>();
   const color = new THREE.Color();
+  const v = new THREE.Vector3();
   body.traverse((o) => {
     if (!(o instanceof THREE.Mesh) || !o.visible) return;
     const mat = (Array.isArray(o.material) ? o.material[0] : o.material) as
       | THREE.MeshStandardMaterial
       | undefined;
-    if (!mat || mat.transparent) return;
-    const g = (o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone()).applyMatrix4(
-      o.matrixWorld,
-    );
+    if (!mat || (mat.transparent && !mat.map)) return;
+    let g = o.geometry.clone();
+    if (o instanceof THREE.SkinnedMesh) {
+      // Apply the current pose: bone transforms per vertex, then the mesh's world matrix.
+      o.skeleton.update();
+      const pos = g.attributes.position as THREE.BufferAttribute;
+      for (let i = 0; i < pos.count; i++) {
+        o.getVertexPosition(i, v);
+        pos.setXYZ(i, v.x, v.y, v.z);
+      }
+      g.deleteAttribute("skinIndex");
+      g.deleteAttribute("skinWeight");
+    }
+    if (g.index) g = g.toNonIndexed();
+    g.applyMatrix4(o.matrixWorld);
+    if (o instanceof THREE.SkinnedMesh) g.computeVertexNormals();
+    if (mat.map) {
+      for (const name of Object.keys(g.attributes))
+        if (name !== "position" && name !== "normal" && name !== "uv") g.deleteAttribute(name);
+      const list = textured.get(mat) ?? [];
+      list.push(g);
+      textured.set(mat, list);
+      return;
+    }
     for (const name of Object.keys(g.attributes))
       if (name !== "position" && name !== "normal") g.deleteAttribute(name);
     // Emissive parts (eyes, signals) keep their glow colour; everything else its albedo.
@@ -136,14 +178,19 @@ function bakedBody(form: NpcForm, lib: MaterialLibrary): THREE.BufferGeometry {
     const colors = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) colors.set([color.r, color.g, color.b], i * 3);
     g.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-    parts.push(g);
+    flat.push(g);
   });
-  const out = mergeGeometries(parts, false);
-  if (!out) throw new Error(`could not bake NPC form ${form}`);
-  out.userData.shared = true;
-  for (const p of parts) p.dispose();
-  byForm.set(form, out);
-  return out;
+  const parts: BakedPart[] = [];
+  const merge = (list: THREE.BufferGeometry[]) => {
+    const out = list.length === 1 ? list[0] : mergeGeometries(list, false);
+    if (!out) throw new Error(`could not bake NPC form ${form}`);
+    out.userData.shared = true;
+    return out;
+  };
+  if (flat.length) parts.push({ geometry: merge(flat), material: crowdMaterial(lib) });
+  for (const [material, list] of textured) parts.push({ geometry: merge(list), material });
+  byForm.set(form, parts);
+  return parts;
 }
 
 const crowdMaterials = new WeakMap<MaterialLibrary, THREE.MeshStandardMaterial>();

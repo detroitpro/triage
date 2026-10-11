@@ -295,8 +295,14 @@ export class Game {
     this.player.update(dt);
     const built = this.built;
     if (!built) return;
-    for (const n of built.npcs.values())
-      if (built.crowd.isNear(n.placement.issue)) animateNpc(n, t, this.settings.reducedMotion);
+    const talking = this.dialogue.open ? this.dialogue.current?.issue : undefined;
+    for (const n of built.npcs.values()) {
+      if (!built.crowd.isNear(n.placement.issue)) continue;
+      // Generated characters talk while their dialogue is open; leave plays from the verbs.
+      if (!n.practice && n.authored.character && !this.verbs.leaving(n.placement.issue))
+        n.authored.character.play(n.placement.issue === talking ? "talk" : "idle");
+      animateNpc(n, t, this.settings.reducedMotion);
+    }
     for (const d of built.doors) animateDoor(d, t);
     const pos = this.player.pos;
     // Doors.

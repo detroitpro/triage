@@ -89,6 +89,8 @@ export class Verbs {
   private fx = new TweenManager();
   /** Per-NPC undo of the practice "sit": original materials and scale. */
   private sat = new Map<number, () => void>();
+  /** NPCs mid bow-out: their character plays its leave clip, not idle or talk. */
+  private bowing = new Set<number>();
   /** Doors unlocked by a release, for rewind. */
   private unlocked = new Map<number, Door[]>();
   private seq = 0;
@@ -474,7 +476,14 @@ export class Verbs {
   // ---- animations ------------------------------------------------------------------------
 
   /** Live release: the NPC shrinks with a light pulse and leaves. */
+  /** Is this NPC playing its live release (bow-out)? */
+  leaving(issue: number): boolean {
+    return this.bowing.has(issue);
+  }
+
   private bowOut(h: NpcHandle): () => void {
+    this.bowing.add(h.placement.issue);
+    h.authored.character?.play("leave", 0.15);
     // A glow card, not a light: adding a light would recompile every material mid-animation.
     const glow = makeGlowSprite("#ffe9a8", 0.01);
     glow.material = glow.material.clone();
@@ -495,6 +504,7 @@ export class Verbs {
       () => {
         glow.removeFromParent();
         glow.material.dispose();
+        this.bowing.delete(h.placement.issue);
         this.host.removeNpc(h.placement.issue);
         h.group.scale.copy(base);
       },
@@ -503,6 +513,7 @@ export class Verbs {
       tween.cancel();
       glow.removeFromParent();
       glow.material.dispose();
+      this.bowing.delete(h.placement.issue);
       h.group.scale.copy(base);
       this.host.restoreNpc(h.placement.issue);
     };

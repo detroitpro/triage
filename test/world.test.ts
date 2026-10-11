@@ -73,3 +73,13 @@ describe("buildWorld", () => {
     for (const n of [1, 2, 4, 5]) expect(pos(after, n)).toEqual(pos(before, n));
   });
 });
+
+describe("biome post", () => {
+  it("gives every biome a finishing pass, darker biomes more vignette and bloom", () => {
+    const meadow = biomeFor(0, 0, "bug").post;
+    const dungeon = biomeFor(0.5, 2.5, "bug").post;
+    expect(meadow && dungeon).toBeTruthy();
+    expect(dungeon?.vignette ?? 0).toBeGreaterThan(meadow?.vignette ?? 1);
+    expect(dungeon?.bloom ?? 0).toBeGreaterThan(meadow?.bloom ?? 1);
+  });
+});

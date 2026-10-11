@@ -14,6 +14,15 @@ const MEADOW: Biome = {
   props: ["tree", "flower"],
   npcForm: "creature",
   sound: "birds",
+  post: {
+    bloom: 0.35,
+    bloomThreshold: 1.05,
+    saturation: 1.15,
+    contrast: 1.06,
+    warmth: 0.12,
+    vignette: 0.25,
+    environment: 0.22,
+  },
 };
 
 const VILLAGE: Biome = {
@@ -27,6 +36,15 @@ const VILLAGE: Biome = {
   props: ["crate", "lamp"],
   npcForm: "villager",
   sound: "town",
+  post: {
+    bloom: 0.45,
+    bloomThreshold: 1.02,
+    saturation: 1.1,
+    contrast: 1.08,
+    warmth: 0.18,
+    vignette: 0.35,
+    environment: 0.18,
+  },
 };
 
 const INDUSTRIAL: Biome = {
@@ -40,6 +58,15 @@ const INDUSTRIAL: Biome = {
   props: ["pipe", "crate", "lamp"],
   npcForm: "worker",
   sound: "machines",
+  post: {
+    bloom: 0.55,
+    bloomThreshold: 1.0,
+    saturation: 0.95,
+    contrast: 1.12,
+    warmth: -0.08,
+    vignette: 0.4,
+    environment: 0.12,
+  },
 };
 
 const DUNGEON: Biome = {
@@ -53,6 +80,15 @@ const DUNGEON: Biome = {
   props: ["torch", "bones"],
   npcForm: "shade",
   sound: "drips",
+  post: {
+    bloom: 0.7,
+    bloomThreshold: 0.95,
+    saturation: 0.9,
+    contrast: 1.15,
+    warmth: -0.05,
+    vignette: 0.55,
+    environment: 0.04,
+  },
 };
 
 /**

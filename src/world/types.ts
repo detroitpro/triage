@@ -32,6 +32,22 @@ export interface Biome {
   npcForm: NpcForm;
   /** Ambient sound family: "birds", "town", "machines", "drips". */
   sound: string;
+  /** Finishing pass (charter "Look": post is owned by the biome). Optional for older files. */
+  post?: BiomePost;
+}
+
+export interface BiomePost {
+  /** Bloom strength on authored emissive (0 = off), and the luminance it starts at. */
+  bloom: number;
+  bloomThreshold: number;
+  /** Colour grade: 1 = neutral. Warmth shifts toward amber (+) or blue (-), -1..1. */
+  saturation: number;
+  contrast: number;
+  warmth: number;
+  /** 0 = none; darkens the frame edges, never the centre. */
+  vignette: number;
+  /** Image-based light from a neutral studio environment, 0..1; lets PBR read. */
+  environment: number;
 }
 
 export interface Dimensions {

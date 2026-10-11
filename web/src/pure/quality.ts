@@ -13,6 +13,9 @@ export interface QualityProfile {
   /** MSAA. A WebGL context attribute: changing it needs a reload. */
   antialias: boolean;
   shadowMapSize: number;
+  /** Post: bloom resolution as a fraction of the render size, and MSAA samples on the scene target. */
+  bloomScale: number;
+  samples: number;
 }
 
 export const PROFILES: Record<Tier, QualityProfile> = {
@@ -23,6 +26,8 @@ export const PROFILES: Record<Tier, QualityProfile> = {
     maxScale: 1,
     antialias: false,
     shadowMapSize: 1024,
+    bloomScale: 0.5,
+    samples: 0,
   },
   high: {
     tier: "high",
@@ -31,6 +36,8 @@ export const PROFILES: Record<Tier, QualityProfile> = {
     maxScale: 1,
     antialias: true,
     shadowMapSize: 2048,
+    bloomScale: 1,
+    samples: 4,
   },
 };
 

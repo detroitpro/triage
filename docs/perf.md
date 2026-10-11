@@ -77,10 +77,15 @@ scene. The fixes are the render rules in the charter's "Look" section (milestone
 
 ## M7 progress
 
-fps with vsync off (GPU throughput) per step, same harness and machine. Vsync-on fps stays
-near 30 until a frame fits in 16.7 ms, so it only moves at the end.
+fps with vsync off (GPU throughput) per step, same harness and machine. Each cell after
+the baseline is the median of 5 passes (`PERF_REPEAT=5`, step 1 re-measured that way);
+runs vary by up to ±20% in dense areas, so differences under that are noise. Vsync-on fps stays near 30 until a frame fits in 16.7 ms, so it moves last.
 
-| Step | feature hub | feature, largest (100) | feature, smallest (10) | security, largest (256) | security, 224 |
+| Step | feature hub | feature, largest (100) | feature, smallest (10) | security, 256 | security, 224 |
 |------|----:|----:|----:|----:|----:|
-| baseline | 25 | 32 | 58 | 29 | 27 |
-| 1. static shadow map, NPCs and animated parts stop casting | 38 | 55 | 108 | 43 | 36 |
+| baseline (single pass) | 25 | 32 | 58 | 29 | 27 |
+| 1. static shadow map; NPCs and animated parts stop casting | 36 | 51 | 127 | 40 | 48 |
+| 2. no real-time point lights; practicals are glow cards | 59 | 69 | 130 | 43 | 44 |
+
+After step 2 the feature tour compiles 36 shader programs instead of 53 and the count holds
+across the tour. The dense security areas are bound by NPC draw calls (step 4).

@@ -4,6 +4,7 @@
 // `applied: true`. Offline or dry run, ghosts stay ghosts and the HUD says "practice".
 import * as THREE from "three";
 import type { Door, LabelMeta, Placement, Vec3, World } from "../../../src/world/types.ts";
+import { makeGlowSprite } from "../assets/WorldPropKit.ts";
 import {
   type Action,
   type ActionResult,
@@ -305,7 +306,7 @@ export class Verbs {
   private async commit(entry: HeldAction): Promise<void> {
     const a = entry.action;
     const h = this.host.npc(a.issue);
-    const practiceLikely = this.api.offline || this.api.mode !== "live";
+    const practiceLikely = !this.api.simulateLive && (this.api.offline || this.api.mode !== "live");
     // 1. Visible state now, as a ghost.
     const revert = this.ghostApply(a, h, practiceLikely);
     playSfx(a.type === "close" ? "release" : "snap");
@@ -474,9 +475,12 @@ export class Verbs {
 
   /** Live release: the NPC shrinks with a light pulse and leaves. */
   private bowOut(h: NpcHandle): () => void {
-    const light = new THREE.PointLight("#ffe9a8", 0, 7, 2);
-    light.position.y = 1.2;
-    h.group.add(light);
+    // A glow card, not a light: adding a light would recompile every material mid-animation.
+    const glow = makeGlowSprite("#ffe9a8", 0.01);
+    glow.material = glow.material.clone();
+    glow.material.userData.shared = false;
+    glow.position.y = 1.2;
+    h.group.add(glow);
     const base = h.group.scale.clone();
     const flash = pulse(0.25);
     const dur = this.host.reducedMotion() ? 0.25 : 0.7;
@@ -485,18 +489,20 @@ export class Verbs {
       (t) => {
         const s = 1 - easeInQuad(t) * 0.98;
         h.group.scale.set(base.x * s, base.y * s, base.z * s);
-        light.intensity = flash(t) * 40;
+        glow.scale.setScalar(0.01 + flash(t) * 4);
       },
       (t) => t,
       () => {
-        light.removeFromParent();
+        glow.removeFromParent();
+        glow.material.dispose();
         this.host.removeNpc(h.placement.issue);
         h.group.scale.copy(base);
       },
     );
     return () => {
       tween.cancel();
-      light.removeFromParent();
+      glow.removeFromParent();
+      glow.material.dispose();
       h.group.scale.copy(base);
       this.host.restoreNpc(h.placement.issue);
     };

@@ -26,6 +26,8 @@ export interface TriageDebug {
   teleport(regionId: string): void;
   lookAt(issueNumber: number): void;
   setYawPitch(yaw: number, pitch: number): void;
+  /** Stand at (x, z) in the current area facing `yaw`, for QA shots. */
+  standAt(x: number, z: number, yaw: number): void;
   openMap(): void;
   closeMap(): void;
   talk(issueNumber: number): void;
@@ -506,13 +508,11 @@ export class Game {
     if (i < 0) return;
     const old = built.doors[i] as DoorHandle;
     old.group.removeFromParent();
-    if (old.light) built.lights = built.lights.filter((l) => l !== old.light);
     const fresh = buildDoor(door, this.world, built.area.biome.palette.accent, built.lib);
     built.group.add(fresh.group);
     built.doors[i] = fresh;
     // Locked doors cast bars; the static shadow map must be redrawn without them (or with).
     built.rig.invalidateShadows();
-    if (fresh.light) built.lights.push(fresh.light);
   }
 
   /** The hourglass walk ends at the region's portal to the hub, else its entrance. */
@@ -603,6 +603,7 @@ export class Game {
         this.player.yaw = Math.atan2(-(p[0] - me[0]), -(p[2] - me[2]));
         this.player.pitch = 0;
       },
+      standAt: (x, z, yaw) => this.player.teleport([x, 0, z], yaw),
       setYawPitch: (yaw, pitch) => {
         this.player.yaw = yaw;
         this.player.pitch = pitch;

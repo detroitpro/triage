@@ -11,10 +11,13 @@ import {
   buildLightingRig,
   configureRenderer,
   type LightingRig,
+  PRACTICAL_COLOR,
   SHADOW_MAP_SIZE,
 } from "../assets/LightingRig.ts";
 import { getMaterialLibrary, type MaterialLibrary } from "../assets/MaterialLibrary.ts";
+import { radialFalloff } from "../assets/ProceduralTextures.ts";
 import { extraFamilies, geo, isSharedGeometry, makeGlowSprite } from "../assets/WorldPropKit.ts";
+import type { Bounds } from "../pure/collision.ts";
 import { hashString } from "../pure/rng.ts";
 import { type PropInstance, scatterProps } from "../pure/scatter.ts";
 import type { Area } from "./areas.ts";
@@ -103,56 +106,26 @@ export function buildArea(
   const props = [...main, ...mid, ...decals];
   group.add(buildProps(props, biome, lib));
 
-  // Practicals: torches flicker, lanterns are steady. The rig caps them per region.
-  const practicalFamily = lib.kind === "dungeon" ? "torch" : "lamp";
-  const candidates = props.filter((p) => p.family === practicalFamily);
-  // Spread the capped practicals across the room instead of taking the first few.
-  const stride = Math.max(1, Math.floor(candidates.length / 4));
-  for (let i = 0; i < candidates.length; i += stride) {
-    const p = candidates[i];
-    if (!p) continue;
-    const pos = new THREE.Vector3(p.position[0], 0, p.position[2]);
-    const flicker = practicalFamily === "torch";
-    if (flicker) {
-      // The flame sits in front of the bracket, which faces into the room.
-      pos.x += Math.sin(p.rotation) * 0.25 * p.scale;
-      pos.z += Math.cos(p.rotation) * 0.25 * p.scale;
-      pos.y = 2.3 * p.scale;
-    } else {
-      pos.x += Math.cos(p.rotation) * 0.4 * p.scale;
-      pos.z -= Math.sin(p.rotation) * 0.4 * p.scale;
-      pos.y = 2.4 * p.scale;
-    }
-    const added = rig.addPractical(
-      pos,
-      flicker ? "#ff8a3c" : lib.kind === "industrial" ? "#ffcf7a" : "#ffd79a",
-      flicker ? 34 : 12,
-      flicker ? 18 : 12,
-      flicker ? 1 : 0.15,
-    );
-    if (!added) break;
-  }
-
-  // Every practical gets a glow card whether or not it earned a real light.
+  // Practicals: torches flicker, lanterns are steady. Each is an emissive prop plus glow
+  // cards, never a real-time light (charter "Look"), so every practical in the room glows
+  // and the light count, and with it every shader, stays fixed per biome.
+  const flame = lib.kind === "dungeon";
+  const candidates = props.filter((p) => p.family === (flame ? "torch" : "lamp"));
   for (const p of candidates) {
-    const flame = practicalFamily === "torch";
-    const glow = makeGlowSprite(flame ? "#ff9a4a" : "#ffe0a0", flame ? 1.6 : 1.1);
+    // The flame sits in front of the bracket, which faces into the room.
+    const glow = makeGlowSprite(PRACTICAL_COLOR[lib.kind] ?? "#ffe0a0", flame ? 1.6 : 1.1);
     glow.position.set(
       p.position[0] + (flame ? Math.sin(p.rotation) * 0.25 : Math.cos(p.rotation) * 0.4) * p.scale,
       (flame ? 2.3 : 2.4) * p.scale,
       p.position[2] + (flame ? Math.cos(p.rotation) * 0.25 : -Math.sin(p.rotation) * 0.4) * p.scale,
     );
     group.add(glow);
-    if (flame) {
-      // Warm pool on the floor and wall: the bounce a real light would give.
-      const pool = makeGlowSprite("#ff8a3c", 5.5);
-      pool.position.set(p.position[0], 1.2, p.position[2]);
-      pool.material = pool.material.clone();
-      pool.material.opacity = 0.28;
-      pool.material.userData.shared = false;
-      group.add(pool);
-    }
+    rig.addPractical(glow, flame ? 1 : 0.15);
   }
+
+  // Torches light the stone around them: one additive decal on the wall and one on the floor
+  // per torch, all one instanced mesh, in place of the pools real lights used to cast.
+  if (flame && candidates.length) group.add(torchPools(candidates, bounds));
 
   // NPCs face the region centre.
   const npcs = new Map<number, NpcHandle>();
@@ -170,7 +143,6 @@ export function buildArea(
   const doors = area.doors.map((d) => {
     const h = buildDoor(d, world, biome.palette.accent, lib);
     group.add(h.group);
-    if (h.light) lights.push(h.light);
     return h;
   });
 
@@ -231,14 +203,18 @@ export function buildArea(
 }
 
 export function disposeArea(built: BuiltArea): void {
+  // Several objects may share one area-owned material (torch pools): dispose each once.
+  const disposed = new Set<THREE.Material>();
   built.group.traverse((obj) => {
     if (obj instanceof THREE.Mesh || obj instanceof THREE.Sprite) {
-      const g = obj.geometry as THREE.BufferGeometry | undefined;
+      // three shares one geometry across every Sprite; only meshes own theirs.
+      const g = obj instanceof THREE.Mesh ? (obj.geometry as THREE.BufferGeometry) : undefined;
       if (g && !isSharedGeometry(g)) g.dispose();
       const mat = obj.material as THREE.Material | THREE.Material[];
       const mats = Array.isArray(mat) ? mat : mat ? [mat] : [];
       for (const m of mats) {
-        if (m.userData.shared) continue;
+        if (m.userData.shared || disposed.has(m)) continue;
+        disposed.add(m);
         const map = (m as THREE.SpriteMaterial).map;
         if (map && !map.userData.shared) map.dispose();
         m.dispose();
@@ -247,4 +223,56 @@ export function disposeArea(built: BuiltArea): void {
     if (obj instanceof THREE.DirectionalLight) obj.shadow.dispose();
   });
   built.group.removeFromParent();
+}
+
+/** Dungeon wall faces sit within this distance inside the bounds (jittered stone blocks). */
+const WALL_FACE = 0.65;
+
+function torchPools(torches: PropInstance[], b: Bounds): THREE.InstancedMesh {
+  const mesh = new THREE.InstancedMesh(
+    geo("torch.pool", () => new THREE.PlaneGeometry(1, 1)),
+    torchPoolMaterial(),
+    torches.length * 2,
+  );
+  mesh.name = "torchPools";
+  mesh.frustumCulled = false;
+  mesh.renderOrder = 1;
+  const m = new THREE.Matrix4();
+  const q = new THREE.Quaternion();
+  const e = new THREE.Euler();
+  const pos = new THREE.Vector3();
+  const size = new THREE.Vector3();
+  torches.forEach((t, i) => {
+    // Torches face into the room; the wall is behind them at the bounds edge.
+    const fx = Math.sin(t.rotation);
+    const fz = Math.cos(t.rotation);
+    const [x, , z] = t.position;
+    const back =
+      fx > 0.5 ? x - b.x : fx < -0.5 ? b.x + b.w - x : fz > 0.5 ? z - b.z : b.z + b.d - z;
+    const wall = Math.max(0, back - WALL_FACE);
+    pos.set(x - fx * wall, 2.2 * t.scale, z - fz * wall);
+    m.compose(pos, q.setFromEuler(e.set(0, t.rotation, 0)), size.set(5, 4.4, 1));
+    mesh.setMatrixAt(i * 2, m);
+    pos.set(x + fx * 0.6, 0.03, z + fz * 0.6);
+    m.compose(pos, q.setFromEuler(e.set(-Math.PI / 2, 0, 0)), size.set(4.4, 4.4, 1));
+    mesh.setMatrixAt(i * 2 + 1, m);
+  });
+  return mesh;
+}
+
+let poolMaterial: THREE.MeshBasicMaterial | null = null;
+function torchPoolMaterial(): THREE.MeshBasicMaterial {
+  if (!poolMaterial) {
+    poolMaterial = new THREE.MeshBasicMaterial({
+      map: radialFalloff(),
+      // Deeper than the flame colour: additive light on stone reads orange, not yellow.
+      color: "#ff6a1a",
+      transparent: true,
+      opacity: 0.6,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    poolMaterial.userData.shared = true;
+  }
+  return poolMaterial;
 }

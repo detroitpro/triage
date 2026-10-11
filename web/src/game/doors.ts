@@ -2,7 +2,7 @@ import * as THREE from "three";
 import type { Door, World } from "../../../src/world/types.ts";
 import { getMaterialLibrary, type MaterialLibrary } from "../assets/MaterialLibrary.ts";
 import { radialFalloff } from "../assets/ProceduralTextures.ts";
-import { geo, makeContactDisc, merged } from "../assets/WorldPropKit.ts";
+import { geo, makeContactDisc, makeGlowSprite, merged } from "../assets/WorldPropKit.ts";
 import { truncate } from "../pure/dialogueText.ts";
 import { areaLabel } from "./areas.ts";
 import { makeLabelSprite } from "./labels.ts";
@@ -17,7 +17,8 @@ export interface DoorHandle {
   disc?: THREE.Mesh;
   /** Locked signal lamp; pulses. */
   signal?: THREE.Mesh;
-  light?: THREE.PointLight;
+  /** Glow card on the signal lamp; pulses with it. Emissive plus glow, never a real light. */
+  glow?: THREE.Sprite;
 }
 
 function fallbackLib(accent: string): MaterialLibrary {
@@ -57,7 +58,6 @@ function discMaterial(color: string): THREE.MeshBasicMaterial {
 interface PortalParts {
   rings: THREE.Mesh[];
   disc: THREE.Mesh;
-  light: THREE.PointLight;
 }
 
 function buildPortal(group: THREE.Group, lib: MaterialLibrary, locked: boolean): PortalParts {
@@ -128,10 +128,11 @@ function buildPortal(group: THREE.Group, lib: MaterialLibrary, locked: boolean):
   disc.position.y = 2.0;
   disc.renderOrder = 2;
   group.add(disc);
-  const light = new THREE.PointLight(accent, 14, 12, 2);
-  light.position.set(0, 2.0, 0.5);
-  group.add(light);
-  // A pool of light on the floor.
+  // A halo and a pool of light on the floor: the portal reads as a light source without
+  // being one.
+  const halo = makeGlowSprite(accent, 5.5);
+  halo.position.set(0, 2.0, 0.3);
+  group.add(halo);
   const pool = new THREE.Mesh(
     geo("portal.pool", () => new THREE.CircleGeometry(2.2, 24)),
     discMaterial(accent),
@@ -141,14 +142,14 @@ function buildPortal(group: THREE.Group, lib: MaterialLibrary, locked: boolean):
   pool.material = discMaterial(accent);
   pool.renderOrder = 1;
   group.add(pool);
-  return { rings, disc, light };
+  return { rings, disc };
 }
 
 function buildFrame(
   group: THREE.Group,
   lib: MaterialLibrary,
   locked: boolean,
-): { signal?: THREE.Mesh; light?: THREE.PointLight } {
+): { signal?: THREE.Mesh; glow?: THREE.Sprite } {
   const dungeon = lib.kind === "dungeon";
   const industrial = lib.kind === "industrial";
   const frameMat = lib.get(dungeon ? "stoneLight" : industrial ? "metal" : "wood");
@@ -264,7 +265,7 @@ function buildFrame(
   brackets.position.y = 1.35;
   const signal = new THREE.Mesh(
     geo("door.lamp", () => new THREE.SphereGeometry(0.16, 10, 8)),
-    lib.get("shadeEye"),
+    lockLampMaterial(),
   );
   signal.position.set(0, 3.95, 0);
   group.add(signal);
@@ -275,10 +276,53 @@ function buildFrame(
     ),
   );
   cage.position.set(0, 3.8, 0);
-  const light = new THREE.PointLight("#ff3b2a", 10, 8, 2);
-  light.position.set(0, 3.9, -0.3);
-  group.add(light);
-  return { signal, light };
+  // The lamp must read as "blocked" from either side before the label is legible: a red
+  // glow card on each face of the lintel and a faint red wash over the doorway.
+  const glow = makeGlowSprite(LOCK_RED, 1.4);
+  glow.material = lockGlowMaterial(glow.material, 0.9);
+  glow.position.set(0, 4.05, 0.4);
+  group.add(glow);
+  const back = makeGlowSprite(LOCK_RED, 1.4);
+  back.material = glow.material;
+  back.position.set(0, 4.05, -0.4);
+  group.add(back);
+  glow.userData.pair = back;
+  for (const z of [0.6, -0.6]) {
+    const wash = makeGlowSprite(LOCK_RED, 3.4);
+    wash.material = lockGlowMaterial(wash.material, 0.32);
+    wash.position.set(0, 2.3, z);
+    group.add(wash);
+  }
+  return { signal, glow };
+}
+
+// Signal red, kept out of tone mapping: ACES pushes bright red toward the torches' orange.
+const LOCK_RED = "#ff1020";
+let lockLamp: THREE.MeshStandardMaterial | null = null;
+function lockLampMaterial(): THREE.MeshStandardMaterial {
+  if (!lockLamp) {
+    lockLamp = new THREE.MeshStandardMaterial({
+      color: LOCK_RED,
+      emissive: LOCK_RED,
+      emissiveIntensity: 1,
+      roughness: 0.4,
+      toneMapped: false,
+    });
+    lockLamp.userData.shared = true;
+  }
+  return lockLamp;
+}
+const lockGlows = new Map<number, THREE.SpriteMaterial>();
+function lockGlowMaterial(base: THREE.SpriteMaterial, opacity: number): THREE.SpriteMaterial {
+  let m = lockGlows.get(opacity);
+  if (!m) {
+    m = base.clone();
+    m.opacity = opacity;
+    m.toneMapped = false;
+    m.userData.shared = true;
+    lockGlows.set(opacity, m);
+  }
+  return m;
 }
 
 export function buildDoor(
@@ -300,12 +344,11 @@ export function buildDoor(
     const outer = portal.rings[0];
     if (outer) handle.ring = outer;
     handle.disc = portal.disc;
-    handle.light = portal.light;
   } else {
     group.add(makeContactDisc(1.6, 0.35));
     const extra = buildFrame(group, library, locked);
     if (extra.signal) handle.signal = extra.signal;
-    if (extra.light) handle.light = extra.light;
+    if (extra.glow) handle.glow = extra.glow;
   }
   const lines = locked
     ? [`Locked by #${door.locked?.by}`, truncate(door.locked?.title ?? "", 30)]
@@ -337,6 +380,9 @@ export function animateDoor(h: DoorHandle, t: number): void {
   if (h.signal) {
     const pulse = 0.5 + 0.5 * Math.sin(t * 3.5);
     h.signal.scale.setScalar(0.9 + pulse * 0.25);
-    if (h.light) h.light.intensity = 5 + pulse * 8;
+    if (h.glow) {
+      h.glow.scale.setScalar(1.0 + pulse * 0.8);
+      (h.glow.userData.pair as THREE.Sprite | undefined)?.scale.setScalar(1.0 + pulse * 0.8);
+    }
   }
 }

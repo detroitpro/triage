@@ -551,7 +551,6 @@ export class Verbs {
         originals.set(o, o.material);
         const m = Array.isArray(o.material) ? o.material[0] : o.material;
         if (m) o.material = ghostOf(m);
-        o.castShadow = false;
       }
     });
     const scale = h.body.scale.clone();
@@ -579,7 +578,6 @@ export class Verbs {
       tween.cancel();
       for (const [mesh, mat] of originals) {
         mesh.material = mat;
-        mesh.castShadow = true;
       }
       h.body.scale.copy(scale);
       h.label.position.y = labelY;

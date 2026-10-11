@@ -74,3 +74,13 @@ No area meets the 60 fps budget at 500 issues; the best is 47 fps.
 
 None of these is specific to three.js; any forward renderer pays the same for the same
 scene. The fixes are the render rules in the charter's "Look" section (milestone M7).
+
+## M7 progress
+
+fps with vsync off (GPU throughput) per step, same harness and machine. Vsync-on fps stays
+near 30 until a frame fits in 16.7 ms, so it only moves at the end.
+
+| Step | feature hub | feature, largest (100) | feature, smallest (10) | security, largest (256) | security, 224 |
+|------|----:|----:|----:|----:|----:|
+| baseline | 25 | 32 | 58 | 29 | 27 |
+| 1. static shadow map, NPCs and animated parts stop casting | 38 | 55 | 108 | 43 | 36 |

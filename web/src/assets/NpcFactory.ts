@@ -33,7 +33,7 @@ function mesh(
 ): THREE.Mesh {
   const m = new THREE.Mesh(geo(`npc.${key}`, make), lib.get(role));
   m.position.set(x, y, z);
-  m.castShadow = true;
+  m.castShadow = false;
   m.receiveShadow = false;
   return m;
 }

@@ -4,8 +4,10 @@ import type { Bounds } from "../pure/collision.ts";
 import { biomeKind } from "./MaterialLibrary.ts";
 
 /**
- * Key + fill + rim from the biome numbers, one shadow-casting key that follows the camera,
- * and flickering practicals (torches, lanterns). Shadows only ever come from the key.
+ * Key + fill + rim from the biome numbers, one shadow-casting key, and flickering practicals
+ * (torches, lanterns). Shadows only ever come from the key, and its map is static: rendered
+ * once per area (or once per grid cell in areas larger than the map), never per frame. Only
+ * static geometry casts; NPCs and anything animated ground themselves with contact discs.
  */
 export interface Practical {
   light: THREE.PointLight;
@@ -20,7 +22,7 @@ export interface LightingRig {
   lights: THREE.Light[];
   key: THREE.DirectionalLight;
   practicals: Practical[];
-  /** Call once per frame with the active camera. */
+  /** Call once per frame with the active camera. Marks the shadow map for redraw when it moves. */
   update(camera: THREE.Camera, t: number): void;
   /** Add a practical point light; returns null once the per-region cap is reached. */
   addPractical(
@@ -34,6 +36,24 @@ export interface LightingRig {
 
 export const PRACTICAL_CAP = 4;
 export const SHADOW_MAP_SIZE = 2048;
+/** Half the side of the square the key's shadow map covers, in metres. */
+export const SHADOW_HALF = 30;
+/** In areas larger than the map, the map recentres on the player in steps of this many metres. */
+export const SHADOW_STEP = 8;
+
+/**
+ * Where the shadow map is centred. Areas that fit get one fixed centre (the map is drawn
+ * once); larger areas snap the player's position to a grid, so the map is redrawn only when
+ * the player crosses a cell and the player is always at least SHADOW_HALF - SHADOW_STEP
+ * metres from its edge. Looking around never moves it.
+ */
+export function shadowCenter(bounds: Bounds, x: number, z: number): [number, number] {
+  const cx = bounds.x + bounds.w / 2;
+  const cz = bounds.z + bounds.d / 2;
+  const fits = Math.max(bounds.w, bounds.d) / 2 <= SHADOW_HALF - 2;
+  if (fits) return [cx, cz];
+  return [Math.round(x / SHADOW_STEP) * SHADOW_STEP, Math.round(z / SHADOW_STEP) * SHADOW_STEP];
+}
 
 /** ACES exposure per biome: dark biomes get lifted so torchlight reads, bright ones stay crisp. */
 export function exposureFor(biome: Biome): number {
@@ -61,7 +81,8 @@ export function configureRenderer(renderer: THREE.WebGLRenderer, biome: Biome): 
   renderer.toneMappingExposure = exposureFor(biome);
   if (!renderer.shadowMap.enabled) {
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // three r186 removed PCFSoftShadowMap; PCF with shadow.radius is the soft option.
+    renderer.shadowMap.type = THREE.PCFShadowMap;
   }
   return true;
 }
@@ -95,16 +116,17 @@ export function buildLightingRig(biome: Biome, bounds: Bounds): LightingRig {
   key.castShadow = true;
   key.shadow.mapSize.set(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
   const cam = key.shadow.camera;
-  const half = 26;
-  cam.left = -half;
-  cam.right = half;
-  cam.top = half;
-  cam.bottom = -half;
+  cam.left = -SHADOW_HALF;
+  cam.right = SHADOW_HALF;
+  cam.top = SHADOW_HALF;
+  cam.bottom = -SHADOW_HALF;
   cam.near = 1;
   cam.far = 90;
   key.shadow.bias = -0.0006;
   key.shadow.normalBias = 0.03;
   key.shadow.radius = 2;
+  key.shadow.autoUpdate = false;
+  key.shadow.needsUpdate = true;
   group.add(key, key.target);
   lights.push(key);
 
@@ -141,17 +163,19 @@ export function buildLightingRig(biome: Biome, bounds: Bounds): LightingRig {
   const cz = bounds.z + bounds.d / 2;
   fill.target.position.set(cx, 0, cz);
 
+  let placed = false;
   const update = (camera: THREE.Camera, t: number) => {
-    // Key light tracks the player so the 2048 map stays sharp around what they look at.
     camera.getWorldDirection(forward);
-    anchor.copy(camera.position);
-    anchor.y = 0;
-    anchor.addScaledVector(forward.setY(0).normalize(), 8);
-    // Snap the shadow anchor to a grid so edges do not swim while walking.
-    anchor.x = Math.round(anchor.x / 2) * 2;
-    anchor.z = Math.round(anchor.z / 2) * 2;
-    key.target.position.copy(anchor);
-    key.position.copy(anchor).addScaledVector(keyDir, 40);
+    const [sx, sz] = shadowCenter(bounds, camera.position.x, camera.position.z);
+    if (!placed || sx !== anchor.x || sz !== anchor.z) {
+      placed = true;
+      anchor.set(sx, 0, sz);
+      key.target.position.copy(anchor);
+      key.position.copy(anchor).addScaledVector(keyDir, 40);
+      key.target.updateMatrixWorld();
+      key.updateMatrixWorld();
+      key.shadow.needsUpdate = true;
+    }
     rim.target.position.copy(camera.position).setY(0);
     rim.position.copy(camera.position).addScaledVector(forward, 22).setY(12);
     for (const p of practicals) {

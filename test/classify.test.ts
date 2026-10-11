@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { classifyAll, mentionedPaths, toClassified } from "../src/classify/index.ts";
 import { issueQuestions, THRESHOLDS } from "../src/questions.ts";
 import type { SystemOne } from "../src/systemone.ts";
-import { jevViaOpenRouter, llmSystemOne } from "../src/systemone.ts";
+import { jevViaOpenRouter, llmSystemOne, pickSystemOne } from "../src/systemone.ts";
 import { AREAS, ISSUES } from "./fixtures/issues.ts";
 
 const Q = issueQuestions(AREAS.functional, AREAS.code);
@@ -143,6 +143,30 @@ describe("jevViaOpenRouter", () => {
     expect(seen[0]?.auth).toBe("Bearer or-key");
     expect(seen[0]?.body.model).toBe("~typesafe/jev-latest");
     expect(answers.actionable.noul).toBe(0.9);
+  });
+});
+
+describe("pickSystemOne", () => {
+  afterEach(() => vi.unstubAllEnvs());
+  const pick = (typesafe: string, openrouter: string) => {
+    vi.stubEnv("TYPESAFE_API_KEY", typesafe);
+    vi.stubEnv("OPENROUTER_API_KEY", openrouter);
+    const logs: string[] = [];
+    const client = pickSystemOne((m) => logs.push(m));
+    return { client, log: logs.join("\n") };
+  };
+
+  it("prefers Jev direct, then Jev via OpenRouter", () => {
+    expect(pick("ts-key", "or-key").log).toMatch(/systemone: jev \(/);
+    expect(pick("", "or-key").log).toMatch(/jev via OpenRouter/);
+  });
+
+  it("fails every call clearly when neither key exists", async () => {
+    const { client, log } = pick("", "");
+    expect(log).toMatch(/none/);
+    await expect(client.systemOne({ state: {}, questions: { a: Q.actionable } })).rejects.toThrow(
+      /OPENROUTER_API_KEY or TYPESAFE_API_KEY/,
+    );
   });
 });
 

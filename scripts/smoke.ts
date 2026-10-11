@@ -36,7 +36,7 @@ await check(
   async () => {
     const client = jevDirect
       ? new TypeSafeClient()
-      : jevViaOpenRouter(process.env.OPENROUTER_API_KEY ?? "");
+      : jevViaOpenRouter(process.env.OPENROUTER_API_KEY as string);
     const { answers, model } = await client.systemOne({
       state: {
         title: "Checkout returns 500",

@@ -23,7 +23,7 @@ description: >-
 1. **Never** put client IDs, client secrets, or `.env` values in chat, commits, issues, or this skill. This repo is public.
 2. Credentials are host-local: `$HOME/.config/infisical/mi-triage.env` (identity) and `$HOME/.config/infisical/domain`.
 3. Do **not** invent env values. If unlock fails because the identity file is missing, stop and tell the operator the host needs the `mi-triage` identity installed.
-4. A key missing from Infisical (for example `TYPESAFE_API_KEY` before it is issued) is reported as a `SKIP` by `make smoke`; tell the operator rather than working around it.
+4. A key missing from Infisical is reported as a `SKIP` by `make smoke`; tell the operator rather than working around it. `TYPESAFE_API_KEY` is optional: without it Jev is reached through OpenRouter.
 
 ## Commands (repo root)
 

@@ -1,7 +1,7 @@
 // A SystemOne answerer. The real one is TypeSafeClient (Jev), reached directly with
 // TYPESAFE_API_KEY or through OpenRouter's TypeSafe gateway with OPENROUTER_API_KEY.
-// `llmSystemOne` is a general-model stand-in with the same response shape, used only when
-// neither key exists.
+// `llmSystemOne` is a general-model stand-in with the same response shape, for tests and
+// explicit opt-in; it also needs OPENROUTER_API_KEY, so it is never the no-key fallback.
 import type {
   ChoiceQuestion,
   Question,
@@ -36,7 +36,7 @@ export function jevViaOpenRouter(apiKey: string, fetchImpl?: typeof fetch): Syst
   });
 }
 
-/** Picks Jev direct, then Jev via OpenRouter, then the LLM stand-in. Logs which. */
+/** Picks Jev direct, then Jev via OpenRouter. Logs which. With neither key, every call fails clearly. */
 export function pickSystemOne(log: (m: string) => void = () => {}): SystemOne {
   if (process.env.TYPESAFE_API_KEY) {
     log(`systemone: jev (${JEV_MODEL})`);
@@ -46,8 +46,11 @@ export function pickSystemOne(log: (m: string) => void = () => {}): SystemOne {
     log(`systemone: jev via OpenRouter (${OPENROUTER_JEV_MODEL})`);
     return jevViaOpenRouter(process.env.OPENROUTER_API_KEY);
   }
-  log("systemone: LLM stand-in (no Jev key); confidences are self-reported");
-  return llmSystemOne();
+  log("systemone: none (set OPENROUTER_API_KEY or TYPESAFE_API_KEY)");
+  return {
+    systemOne: () =>
+      Promise.reject(new Error("no Jev key: set OPENROUTER_API_KEY or TYPESAFE_API_KEY")),
+  };
 }
 
 function describe(name: string, q: Question): string {

@@ -5,6 +5,9 @@ import {
   Meshy,
   MeshyError,
   nextStage,
+  type PipelineIO,
+  retryFrom,
+  runPipeline,
   stageRequest,
 } from "../scripts/assets/meshy.ts";
 
@@ -52,7 +55,7 @@ describe("Meshy client", () => {
 describe("character stages", () => {
   const empty: Checkpoint = { form: "villager", tasks: {}, files: {} };
 
-  it("runs preview, refine, rig, animate in order and stops where asked", () => {
+  it("runs concept, model, rig, animate in order and stops where asked", () => {
     expect(nextStage(empty)).toBe("concept");
     const afterConcept: Checkpoint = {
       ...empty,
@@ -86,5 +89,97 @@ describe("character stages", () => {
       expect(c.prompt.length).toBeLessThanOrEqual(800);
       expect(c.texturePrompt.length).toBeLessThanOrEqual(800);
     }
+  });
+});
+
+describe("runPipeline", () => {
+  /** A fake Meshy that counts POSTs and answers GETs with a finished task. */
+  function fakeMeshy(status = "SUCCEEDED") {
+    const calls = { posts: 0, gets: 0 };
+    const fetchFn = (async (_url: string | URL | Request, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        calls.posts++;
+        return new Response(JSON.stringify({ result: `new-${calls.posts}` }));
+      }
+      calls.gets++;
+      return new Response(
+        JSON.stringify({
+          id: "t",
+          status,
+          progress: 100,
+          consumed_credits: 5,
+          finished_at: 1_791_700_000_000,
+          image_urls: ["https://x/concept.png"],
+          model_urls: { glb: "https://x/m.glb" },
+          result: {
+            rigged_character_glb_url: "https://x/r.glb",
+            animation_glb_url: "https://x/a.glb",
+          },
+        }),
+      );
+    }) as typeof fetch;
+    return { meshy: new Meshy("k", fetchFn), calls };
+  }
+  const io = (): PipelineIO & { saves: number; files: string[] } => {
+    const o = {
+      saves: 0,
+      files: [] as string[],
+      save: () => {
+        o.saves++;
+      },
+      download: async () => new Uint8Array([1]),
+      write: (name: string) => {
+        o.files.push(name);
+      },
+      log: () => {},
+    };
+    return o;
+  };
+  const fast = (m: Meshy) => {
+    // Keep polling instant in tests.
+    const wait = m.wait.bind(m);
+    m.wait = (kind, id, opts) => wait(kind, id, { ...opts, intervalMs: 1 });
+    return m;
+  };
+
+  it("resumes a saved task id without submitting again", async () => {
+    const { meshy, calls } = fakeMeshy();
+    const cp: Checkpoint = { form: "villager", tasks: { concept: { id: "saved" } }, files: {} };
+    await runPipeline(fast(meshy), spec, cp, io(), "concept");
+    expect(calls.posts).toBe(0);
+    expect(cp.files.concept).toBe("concept.png");
+    expect(cp.tasks.concept?.finishedAt).toBe(1_791_700_000_000);
+  });
+
+  it("saves the submitting marker before the POST and the id right after", async () => {
+    const { meshy, calls } = fakeMeshy();
+    const cp: Checkpoint = { form: "villager", tasks: {}, files: {} };
+    const o = io();
+    await runPipeline(fast(meshy), spec, cp, o, "concept");
+    expect(calls.posts).toBe(1);
+    expect(cp.tasks.concept).toMatchObject({ id: "new-1", status: "SUCCEEDED" });
+    expect(cp.tasks.concept?.submitting).toBeUndefined();
+    expect(o.saves).toBeGreaterThanOrEqual(3);
+  });
+
+  it("refuses to submit when an earlier submission's outcome is unknown", async () => {
+    const { meshy, calls } = fakeMeshy();
+    const cp: Checkpoint = {
+      form: "villager",
+      tasks: { concept: { id: "", submitting: true } },
+      files: {},
+    };
+    await expect(runPipeline(fast(meshy), spec, cp, io())).rejects.toThrow(/task list/);
+    expect(calls.posts).toBe(0);
+  });
+
+  it("records a failed task and needs an explicit retry", async () => {
+    const { meshy } = fakeMeshy("FAILED");
+    const cp: Checkpoint = { form: "villager", tasks: { concept: { id: "c" } }, files: {} };
+    await expect(runPipeline(fast(meshy), spec, cp, io())).rejects.toThrow(/FAILED/);
+    expect(cp.tasks.concept?.status).toBe("FAILED");
+    await expect(runPipeline(fast(meshy), spec, cp, io())).rejects.toThrow(/--retry concept/);
+    retryFrom(cp, "concept");
+    expect(cp.tasks.concept).toBeUndefined();
   });
 });

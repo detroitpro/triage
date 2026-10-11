@@ -13,6 +13,8 @@ export interface AssetProvenance {
   /** Provider task IDs, in pipeline order (model, rig, animations). */
   taskIds: string[];
   prompt: string;
+  /** Generation settings beyond the prompt (request bodies, texture prompt). */
+  settings?: Record<string, unknown>;
   /** Provider seed when one was used, for regeneration. */
   seed?: number | string;
   /** Licence of the output under the provider's terms, e.g. "Tripo paid plan: commercial use". */

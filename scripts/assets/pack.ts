@@ -13,7 +13,7 @@ import { MeshoptEncoder } from "meshoptimizer";
 import sharp from "sharp";
 import type { AssetManifest, CharacterAsset } from "../../web/src/pure/manifest.ts";
 import { CHARACTERS } from "./characters.ts";
-import type { Checkpoint } from "./meshy.ts";
+import { type Checkpoint, STAGES, stageRequest } from "./meshy.ts";
 
 const form = process.argv[2];
 const spec = form ? CHARACTERS[form] : undefined;
@@ -43,6 +43,16 @@ clips.forEach((clip, i) => {
   const role = roles[i] as string;
   clipNames[role] = clip.getName();
 });
+// Meshy returns clips in action_ids order; a mismatch here would give NPCs the wrong motion.
+const expected: Record<string, RegExp> = {
+  idle: /idle/i,
+  talk: /talk/i,
+  react: /wave|hello/i,
+  leave: /bow/i,
+};
+for (const [role, name] of Object.entries(clipNames))
+  if (expected[role] && !expected[role].test(name))
+    throw new Error(`${spec.form}: clip for ${role} is "${name}"; check the action ids`);
 
 await doc.transform(
   dedup(),
@@ -76,12 +86,25 @@ const entry: CharacterAsset = {
   ...(spec.hover !== undefined ? { hover: spec.hover } : {}),
   provenance: {
     provider: "meshy",
-    taskIds: (["concept", "model", "rig", "animate"] as const).map((s) => cp.tasks[s]?.id ?? ""),
+    taskIds: STAGES.map((s) => {
+      const id = cp.tasks[s]?.id;
+      if (!id) throw new Error(`${spec.form}: no ${s} task id in the checkpoint`);
+      return id;
+    }),
     prompt: spec.prompt,
+    settings: {
+      texturePrompt: spec.texturePrompt,
+      requests: Object.fromEntries(STAGES.map((s) => [s, stageRequest(s, spec, cp).body])),
+    },
     license:
       "Meshy paid plan: the customer owns the output (Meshy Terms of Use 3.2); library animations licensed as incorporated into the output (3.1)",
     terms: "https://www.meshy.ai/terms-of-use",
-    generatedAt: new Date().toISOString().slice(0, 10),
+    // The animation task's finish time, so repacking never changes the manifest by itself.
+    generatedAt: new Date(
+      cp.tasks.animate?.finishedAt ?? statSync(resolve(work, "animate.glb")).mtimeMs,
+    )
+      .toISOString()
+      .slice(0, 10),
   },
 };
 manifest.assets = [...manifest.assets.filter((a) => a.form !== spec.form), entry].sort((a, b) =>

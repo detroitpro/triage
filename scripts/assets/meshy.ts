@@ -17,6 +17,7 @@ export interface MeshyTask {
   thumbnail_url?: string;
   /** text-to-image */
   image_urls?: string[];
+  finished_at?: number;
   /** rigging and animation */
   result?: Record<string, unknown> | null;
 }
@@ -71,11 +72,8 @@ export class Meshy {
               ? "Meshy could not estimate the pose (rigging)"
               : `Meshy HTTP ${res.status}`;
       // Never echo the request (it carries the key in headers, not the body, but be strict).
-      throw new MeshyError(
-        `${what}: ${text.slice(0, 300)}`,
-        res.status,
-        res.status < 500 && res.status !== 429,
-      );
+      const transient = res.status >= 500 || res.status === 429 || res.status === 408;
+      throw new MeshyError(`${what}: ${text.slice(0, 300)}`, res.status, !transient);
     }
     return (text ? JSON.parse(text) : {}) as T;
   }
@@ -145,10 +143,24 @@ export interface CharacterSpec {
 export type Stage = "concept" | "model" | "rig" | "animate";
 export const STAGES: Stage[] = ["concept", "model", "rig", "animate"];
 
+export interface StageTask {
+  /** Empty while a submission is in flight (see `submitting`). */
+  id: string;
+  /**
+   * Set before the POST and cleared once the id is saved. Found set on resume, it means a
+   * submission may have been accepted without us learning its id: refuse to submit again.
+   */
+  submitting?: boolean;
+  status?: TaskStatus;
+  credits?: number | undefined;
+  /** Meshy's finished_at (ms), for reproducible manifest dates. */
+  finishedAt?: number | undefined;
+}
+
 /** What the checkpoint remembers: accepted task ids are never resubmitted. */
 export interface Checkpoint {
   form: string;
-  tasks: Partial<Record<Stage, { id: string; status?: TaskStatus; credits?: number | undefined }>>;
+  tasks: Partial<Record<Stage, StageTask>>;
   /** Downloaded files, relative to the job folder. */
   files: Partial<Record<Stage, string>>;
 }
@@ -222,4 +234,99 @@ export function nextStage(cp: Checkpoint, stopAfter?: Stage): Stage | null {
     if (s === stopAfter) return null;
   }
   return null;
+}
+
+/** Forget a stage and everything after it, so the next run starts it again (`--retry`). */
+export function retryFrom(cp: Checkpoint, stage: Stage): void {
+  for (const s of STAGES.slice(STAGES.indexOf(stage))) {
+    delete cp.tasks[s];
+    delete cp.files[s];
+  }
+}
+
+export function isStage(s: string | undefined): s is Stage {
+  return (STAGES as string[]).includes(s ?? "");
+}
+
+export interface PipelineIO {
+  /** Persist the checkpoint (atomically). Called before every network side effect. */
+  save(): void;
+  /** Fetch a result file. */
+  download(url: string): Promise<Uint8Array>;
+  /** Write a file into the job folder. */
+  write(name: string, bytes: Uint8Array): void;
+  log(message: string): void;
+}
+
+/**
+ * Run (or resume) the stages for one character. An accepted task id is saved before polling
+ * and never resubmitted; a submission whose outcome is unknown stops the run instead of
+ * paying twice; a failed task is recorded and needs an explicit retry.
+ */
+export async function runPipeline(
+  meshy: Meshy,
+  spec: CharacterSpec,
+  cp: Checkpoint,
+  io: PipelineIO,
+  stopAfter?: Stage,
+): Promise<void> {
+  for (let stage = nextStage(cp, stopAfter); stage; stage = nextStage(cp, stopAfter)) {
+    let task = cp.tasks[stage];
+    if (task?.status === "FAILED" || task?.status === "CANCELED")
+      throw new MeshyError(
+        `${stage} task ${task.id} ${task.status}; rerun with --retry ${stage} to try again`,
+        500,
+        true,
+      );
+    if (task?.submitting && !task.id)
+      throw new MeshyError(
+        `${stage}: an earlier submission may have been accepted without its id being saved. ` +
+          `Check the Meshy task list; then rerun with --retry ${stage} (may charge again).`,
+        500,
+        true,
+      );
+    const { kind, body } = stageRequest(stage, spec, cp);
+    if (!task?.id) {
+      task = { id: "", submitting: true };
+      cp.tasks[stage] = task;
+      io.save();
+      task.id = await meshy.submit(kind, body);
+      delete task.submitting;
+      io.save(); // the id is ours now: a crash after this point resumes, never resubmits
+      io.log(`${stage}: submitted ${task.id}`);
+    }
+    let last = -1;
+    let done: MeshyTask;
+    try {
+      done = await meshy.wait(kind, task.id, {
+        onProgress: (t) => {
+          if (t.progress !== last) io.log(`${stage}: ${t.status} ${t.progress}%`);
+          last = t.progress;
+        },
+      });
+    } catch (err) {
+      if (err instanceof MeshyError && err.permanent && /FAILED|CANCELED/.test(err.message)) {
+        task.status = err.message.includes("CANCELED") ? "CANCELED" : "FAILED";
+        io.save();
+      }
+      throw err;
+    }
+    task.status = done.status;
+    task.credits = done.consumed_credits;
+    task.finishedAt = done.finished_at;
+    const { url, ext } = stageOutput(stage, done);
+    if (!url) throw new MeshyError(`${stage} succeeded without an output file`, 500, true);
+    const file = `${stage}.${ext}`;
+    io.write(file, await io.download(url));
+    if (done.thumbnail_url) {
+      try {
+        io.write(`${stage}.thumb.png`, await io.download(done.thumbnail_url));
+      } catch {
+        // previews are a convenience
+      }
+    }
+    cp.files[stage] = file;
+    io.save();
+    io.log(`${stage}: done (${done.consumed_credits ?? "?"} credits) -> ${file}`);
+  }
 }

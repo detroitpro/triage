@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import type { Bounds } from "../pure/collision.ts";
 import { mulberry32 } from "../pure/rng.ts";
-import type { MaterialLibrary } from "./MaterialLibrary.ts";
+import { KEY_DIR } from "./LightingRig.ts";
+import { type MaterialLibrary, WIND } from "./MaterialLibrary.ts";
 import { noise2 } from "./ProceduralTextures.ts";
 import { FAMILIES, geo, instanced, matrixAt, merged } from "./WorldPropKit.ts";
 
@@ -187,28 +188,54 @@ function farLayer(b: Bounds, lib: MaterialLibrary, seed: number): THREE.Object3D
 }
 
 /** Gradient sky dome: horizon takes the fog colour, zenith the biome sky colour deepened. */
+/**
+ * Stylized sky: zenith-to-horizon gradient from the biome, a sun disc and halo in the key
+ * light's direction (HDR, so it blooms), and soft drifting cloud bands. One draw call.
+ */
 function skyDome(b: Bounds, lib: MaterialLibrary): THREE.Mesh {
-  const g = new THREE.SphereGeometry(300, 24, 12);
-  const pos = g.attributes.position;
-  const colors: number[] = [];
   const horizon = new THREE.Color(lib.biome.fog.color);
-  const zenith = new THREE.Color(lib.biome.sky).offsetHSL(0.01, 0.1, -0.08);
-  const c = new THREE.Color();
-  if (pos) {
-    for (let i = 0; i < pos.count; i++) {
-      const t = THREE.MathUtils.clamp(pos.getY(i) / 300, -0.1, 1);
-      c.copy(horizon).lerp(zenith, THREE.MathUtils.smoothstep(t, 0.0, 0.6));
-      colors.push(c.r, c.g, c.b);
-    }
-  }
-  g.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
-  const mat = new THREE.MeshBasicMaterial({
-    vertexColors: true,
+  const zenith = new THREE.Color(lib.biome.sky).offsetHSL(0.01, 0.1, -0.1);
+  const mat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     fog: false,
     depthWrite: false,
+    uniforms: {
+      uTop: { value: zenith },
+      uHorizon: { value: horizon },
+      uSun: { value: new THREE.Color("#fff1d2").multiplyScalar(lib.biome.sun) },
+      uSunDir: { value: KEY_DIR.clone() },
+      uTime: WIND,
+    },
+    vertexShader: `varying vec3 vDir;
+      void main() {
+        vDir = normalize(position);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }`,
+    fragmentShader: `uniform vec3 uTop, uHorizon, uSun, uSunDir;
+      uniform float uTime;
+      varying vec3 vDir;
+      float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float noise(vec2 p) {
+        vec2 i = floor(p), f = fract(p);
+        f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
+      }
+      void main() {
+        vec3 d = normalize(vDir);
+        float h = clamp(d.y, 0.0, 1.0);
+        vec3 col = mix(uHorizon, uTop, pow(h, 0.55));
+        // Clouds: two noise octaves projected on a dome, fading toward the horizon.
+        vec2 uv = d.xz / max(d.y + 0.25, 0.05) * 1.6 + vec2(uTime * 0.01, 0.0);
+        float c = noise(uv) * 0.65 + noise(uv * 2.3 + 7.0) * 0.35;
+        c = smoothstep(0.55, 0.8, c) * smoothstep(0.02, 0.25, d.y);
+        col = mix(col, mix(uHorizon, vec3(1.0), 0.7), c * 0.6);
+        float s = max(dot(d, normalize(uSunDir)), 0.0);
+        col += uSun * (pow(s, 900.0) * 6.0 + pow(s, 12.0) * 0.25);
+        gl_FragColor = vec4(col, 1.0);
+      }`,
   });
-  const mesh = new THREE.Mesh(g, mat);
+  mat.userData.shared = false;
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(300, 32, 16), mat);
   mesh.position.set(b.x + b.w / 2, 0, b.z + b.d / 2);
   mesh.renderOrder = -10;
   mesh.frustumCulled = false;

@@ -14,7 +14,7 @@ import {
   PRACTICAL_COLOR,
   SHADOW_MAP_SIZE,
 } from "../assets/LightingRig.ts";
-import { getMaterialLibrary, type MaterialLibrary } from "../assets/MaterialLibrary.ts";
+import { getMaterialLibrary, type MaterialLibrary, WIND } from "../assets/MaterialLibrary.ts";
 import { radialFalloff } from "../assets/ProceduralTextures.ts";
 import { extraFamilies, geo, isSharedGeometry, makeGlowSprite } from "../assets/WorldPropKit.ts";
 import type { Bounds } from "../pure/collision.ts";
@@ -107,7 +107,12 @@ export function buildArea(
   ]);
   const decalDensity = open ? 0.12 : lib.kind === "village" ? 0.04 : 0.012;
   const decals = scatterLayer(area, extras.decals, decalDensity, 1.2, "decals", avoid);
-  const props = [...main, ...mid, ...decals];
+  // Keep the arrival view open: nothing taller than a decal within ENTRANCE_CLEAR of the
+  // entrance, so the first frame in a region shows the region, not a tree trunk.
+  const [ex, , ez] = area.entrance;
+  const clearOf = (p: PropInstance) =>
+    Math.hypot(p.position[0] - ex, p.position[2] - ez) > ENTRANCE_CLEAR;
+  const props = [...main.filter(clearOf), ...mid.filter(clearOf), ...decals];
   group.add(buildProps(props, biome, lib));
 
   // Practicals: torches flicker, lanterns are steady. Each is an emissive prop plus glow
@@ -200,6 +205,7 @@ export function buildArea(
         });
       }
       rig.update(camera, (performance.now() - start) / 1000);
+      WIND.value = performance.now() / 1000;
       installDiagnostics(r, scene, area.id, shadowMapSize);
     });
   };
@@ -234,6 +240,9 @@ export function disposeArea(built: BuiltArea): void {
   for (const h of built.npcs.values()) h.authored.character?.dispose();
   built.group.removeFromParent();
 }
+
+/** Metres around the entrance kept free of props (decals aside). */
+const ENTRANCE_CLEAR = 7;
 
 /** Dungeon wall faces sit within this distance inside the bounds (jittered stone blocks). */
 const WALL_FACE = 0.65;

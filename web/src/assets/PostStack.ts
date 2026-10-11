@@ -5,6 +5,7 @@ import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { POST } from "../../../src/world/post.ts";
 import type { Biome, BiomePost } from "../../../src/world/types.ts";
 import { biomeKind } from "./MaterialLibrary.ts";
 
@@ -15,62 +16,18 @@ import { biomeKind } from "./MaterialLibrary.ts";
  * biomes carried `post`. Also owns the scene's image-based light.
  */
 export interface PostOptions {
-  /** Bloom resolution as a fraction of the render size: 0.5 on high, 0.25 on low. */
+  /**
+   * Scale applied to the size UnrealBloomPass is given. The pass halves it again for its
+   * first mip, so 1 means half-resolution bloom (high tier) and 0.5 quarter (low tier).
+   */
   bloomScale: number;
   /** MSAA samples on the scene target (the canvas's own antialias does not apply here). */
   samples: number;
 }
 
-const FALLBACK: Record<string, BiomePost> = {
-  meadow: {
-    bloom: 0.35,
-    bloomThreshold: 1.05,
-    saturation: 1.15,
-    contrast: 1.06,
-    warmth: 0.12,
-    vignette: 0.25,
-    environment: 0.22,
-  },
-  plaza: {
-    bloom: 0.35,
-    bloomThreshold: 1.05,
-    saturation: 1.1,
-    contrast: 1.05,
-    warmth: 0.1,
-    vignette: 0.25,
-    environment: 0.22,
-  },
-  village: {
-    bloom: 0.45,
-    bloomThreshold: 1.02,
-    saturation: 1.1,
-    contrast: 1.08,
-    warmth: 0.18,
-    vignette: 0.35,
-    environment: 0.18,
-  },
-  industrial: {
-    bloom: 0.55,
-    bloomThreshold: 1.0,
-    saturation: 0.95,
-    contrast: 1.12,
-    warmth: -0.08,
-    vignette: 0.4,
-    environment: 0.12,
-  },
-  dungeon: {
-    bloom: 0.7,
-    bloomThreshold: 0.95,
-    saturation: 0.9,
-    contrast: 1.15,
-    warmth: -0.05,
-    vignette: 0.55,
-    environment: 0.04,
-  },
-};
-
+/** The biome's post block; older world files fall back to the same table by biome kind. */
 export function postFor(biome: Biome): BiomePost {
-  return biome.post ?? FALLBACK[biomeKind(biome)] ?? (FALLBACK.meadow as BiomePost);
+  return biome.post ?? POST[biomeKind(biome)] ?? POST.meadow;
 }
 
 const GradeShader = {
@@ -95,7 +52,7 @@ const GradeShader = {
       c.rgb = pow(max(c.rgb, 0.0), vec3(uContrast)) * pow(0.18, 1.0 - uContrast);
       c.rgb *= vec3(1.0 + uWarmth * 0.12, 1.0 + uWarmth * 0.02, 1.0 - uWarmth * 0.12);
       float d = distance(vUv, vec2(0.5));
-      c.rgb *= mix(1.0, smoothstep(0.85, 0.3, d), uVignette);
+      c.rgb *= mix(1.0, 1.0 - smoothstep(0.3, 0.85, d), uVignette);
       gl_FragColor = c;
     }`,
 };
@@ -105,12 +62,16 @@ export class PostStack {
   private bloom: UnrealBloomPass;
   private grade: ShaderPass;
   private size = new THREE.Vector2();
+  private env: THREE.Texture;
+  /** Scene-pass numbers of the last frame, and the post passes' own draw calls. */
+  private sceneCounts = { calls: 0, triangles: 0 };
+  postCalls = 0;
 
   constructor(
     private readonly renderer: THREE.WebGLRenderer,
     private readonly scene: THREE.Scene,
     camera: THREE.Camera,
-    private readonly options: PostOptions,
+    options: PostOptions,
   ) {
     renderer.getSize(this.size);
     const target = new THREE.WebGLRenderTarget(1, 1, {
@@ -118,16 +79,39 @@ export class PostStack {
       samples: options.samples,
     });
     this.composer = new EffectComposer(renderer, target);
-    this.composer.addPass(new RenderPass(scene, camera));
-    this.bloom = new UnrealBloomPass(this.bloomSize(), 0.4, 0.3, 0.85);
+    // The ping-pong target only ever holds fullscreen passes: no MSAA there.
+    this.composer.renderTarget2.samples = 0;
+    // Record the scene pass's own counts: info would otherwise report only the last pass.
+    const info = renderer.info;
+    const scenePass = new RenderPass(scene, camera);
+    const renderScene = scenePass.render.bind(scenePass);
+    scenePass.render = (...args: Parameters<RenderPass["render"]>) => {
+      const before = { calls: info.render.calls, triangles: info.render.triangles };
+      renderScene(...args);
+      this.sceneCounts.calls = info.render.calls - before.calls;
+      this.sceneCounts.triangles = info.render.triangles - before.triangles;
+    };
+    this.composer.addPass(scenePass);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.4, 0.3, 0.85);
+    // Bloom runs below render resolution; the composer resizes passes, so scale here, once.
+    const bloomSetSize = this.bloom.setSize.bind(this.bloom);
+    this.bloom.setSize = (w: number, h: number) =>
+      bloomSetSize(
+        Math.max(1, Math.round(w * options.bloomScale)),
+        Math.max(1, Math.round(h * options.bloomScale)),
+      );
     this.composer.addPass(this.bloom);
     this.grade = new ShaderPass(GradeShader);
     this.composer.addPass(this.grade);
     this.composer.addPass(new OutputPass());
     this.setSize(this.size.x, this.size.y);
+
     // A neutral studio environment so metal, glass, and painted surfaces read as materials.
     const pmrem = new THREE.PMREMGenerator(renderer);
-    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    const room = new RoomEnvironment();
+    this.env = pmrem.fromScene(room, 0.04).texture;
+    scene.environment = this.env;
+    room.dispose();
     pmrem.dispose();
   }
 
@@ -149,24 +133,27 @@ export class PostStack {
     this.size.set(width, height);
     this.composer.setPixelRatio(this.renderer.getPixelRatio());
     this.composer.setSize(width, height);
-    const b = this.bloomSize();
-    this.bloom.setSize(b.x, b.y);
   }
 
-  /** Follow the renderer's pixel ratio (dynamic resolution). */
+  /** Follow the renderer's pixel ratio (dynamic resolution): one reallocation per change. */
   syncPixelRatio(): void {
-    this.setSize(this.size.x, this.size.y);
+    this.composer.setPixelRatio(this.renderer.getPixelRatio());
   }
 
   render(): void {
+    const info = this.renderer.info;
+    info.autoReset = false;
+    info.reset();
     this.composer.render();
+    // Diagnostics and the perf harness compare scene draw calls against the M7 budget.
+    this.postCalls = info.render.calls - this.sceneCounts.calls;
+    info.render.calls = this.sceneCounts.calls;
+    info.render.triangles = this.sceneCounts.triangles;
   }
 
-  private bloomSize(): THREE.Vector2 {
-    const pr = this.renderer.getPixelRatio() * this.options.bloomScale;
-    return new THREE.Vector2(
-      Math.max(1, Math.round(this.size.x * pr)),
-      Math.max(1, Math.round(this.size.y * pr)),
-    );
+  dispose(): void {
+    this.composer.dispose();
+    this.bloom.dispose();
+    this.env.dispose();
   }
 }

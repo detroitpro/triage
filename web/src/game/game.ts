@@ -117,7 +117,8 @@ export class Game {
     this.profile =
       PROFILES[this.settings.quality === "auto" ? this.autoTier : this.settings.quality];
     this.dynres = new DynamicResolution(this.profile.minScale, this.profile.maxScale);
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: this.profile.antialias });
+    // The canvas only receives fullscreen post passes; MSAA lives on the scene target.
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
     this.renderer.setPixelRatio(this.basePixelRatio());
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.player = new Player(canvas, this.settings);
@@ -337,7 +338,7 @@ export class Game {
     const w = window.innerWidth;
     const h = window.innerHeight;
     this.renderer.setSize(w, h, false);
-    this.post?.setSize(w, h);
+    this.post.setSize(w, h);
     this.player.camera.aspect = w / h;
     this.player.camera.updateProjectionMatrix();
   }

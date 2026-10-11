@@ -1,6 +1,7 @@
 // The biome function: (complexity, security, kind) -> look and feel. Second review surface.
 // Change feel here, not in web/. Charter: "Biome function".
 import { THRESHOLDS } from "../questions.ts";
+import { POST } from "./post.ts";
 import type { Biome } from "./types.ts";
 
 const MEADOW: Biome = {
@@ -14,15 +15,7 @@ const MEADOW: Biome = {
   props: ["tree", "flower"],
   npcForm: "creature",
   sound: "birds",
-  post: {
-    bloom: 0.35,
-    bloomThreshold: 1.05,
-    saturation: 1.15,
-    contrast: 1.06,
-    warmth: 0.12,
-    vignette: 0.25,
-    environment: 0.22,
-  },
+  post: { ...POST.meadow },
 };
 
 const VILLAGE: Biome = {
@@ -36,15 +29,7 @@ const VILLAGE: Biome = {
   props: ["crate", "lamp"],
   npcForm: "villager",
   sound: "town",
-  post: {
-    bloom: 0.45,
-    bloomThreshold: 1.02,
-    saturation: 1.1,
-    contrast: 1.08,
-    warmth: 0.18,
-    vignette: 0.35,
-    environment: 0.18,
-  },
+  post: { ...POST.village },
 };
 
 const INDUSTRIAL: Biome = {
@@ -58,15 +43,7 @@ const INDUSTRIAL: Biome = {
   props: ["pipe", "crate", "lamp"],
   npcForm: "worker",
   sound: "machines",
-  post: {
-    bloom: 0.55,
-    bloomThreshold: 1.0,
-    saturation: 0.95,
-    contrast: 1.12,
-    warmth: -0.08,
-    vignette: 0.4,
-    environment: 0.12,
-  },
+  post: { ...POST.industrial },
 };
 
 const DUNGEON: Biome = {
@@ -80,15 +57,7 @@ const DUNGEON: Biome = {
   props: ["torch", "bones"],
   npcForm: "shade",
   sound: "drips",
-  post: {
-    bloom: 0.7,
-    bloomThreshold: 0.95,
-    saturation: 0.9,
-    contrast: 1.15,
-    warmth: -0.05,
-    vignette: 0.55,
-    environment: 0.04,
-  },
+  post: { ...POST.dungeon },
 };
 
 /**

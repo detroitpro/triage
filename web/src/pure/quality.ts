@@ -10,10 +10,10 @@ export interface QualityProfile {
   /** Dynamic resolution range, as a fraction of the capped DPR. */
   minScale: number;
   maxScale: number;
-  /** MSAA. A WebGL context attribute: changing it needs a reload. */
+  /** MSAA, applied on the post stack's scene target (`samples`); kept for the profile table. */
   antialias: boolean;
   shadowMapSize: number;
-  /** Post: bloom resolution as a fraction of the render size, and MSAA samples on the scene target. */
+  /** Post: scale on the size given to the bloom pass (it halves that again), and MSAA samples on the scene target. */
   bloomScale: number;
   samples: number;
 }

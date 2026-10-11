@@ -118,3 +118,11 @@ describe("tier and refresh edge cases", () => {
     expect(dr.scale).toBe(1);
   });
 });
+
+describe("post settings per tier", () => {
+  it("runs cheaper bloom and no MSAA on low", async () => {
+    const { PROFILES } = await import("../src/pure/quality.ts");
+    expect(PROFILES.low.samples).toBe(0);
+    expect(PROFILES.low.bloomScale).toBeLessThan(PROFILES.high.bloomScale);
+  });
+});

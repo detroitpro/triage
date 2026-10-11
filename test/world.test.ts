@@ -83,3 +83,11 @@ describe("biome post", () => {
     expect(dungeon?.bloom ?? 0).toBeGreaterThan(meadow?.bloom ?? 1);
   });
 });
+
+describe("post validation", () => {
+  it("flags out-of-range post values", async () => {
+    const { postProblems, POST } = await import("../src/world/post.ts");
+    expect(postProblems({ ...POST.meadow })).toEqual([]);
+    expect(postProblems({ ...POST.meadow, environment: 2, warmth: Number.NaN }).length).toBe(2);
+  });
+});

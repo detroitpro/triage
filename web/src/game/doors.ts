@@ -296,17 +296,17 @@ function buildFrame(
   return { signal, glow };
 }
 
-// Signal red, kept out of tone mapping: ACES pushes bright red toward the torches' orange.
-const LOCK_RED = "#ff1020";
+// Signal red. The post stack tone maps every pixel (ACES), which pushes bright red toward the
+// torches' orange, so the lamp stays at a moderate intensity where ACES keeps the hue.
+const LOCK_RED = "#ff0814";
 let lockLamp: THREE.MeshStandardMaterial | null = null;
 function lockLampMaterial(): THREE.MeshStandardMaterial {
   if (!lockLamp) {
     lockLamp = new THREE.MeshStandardMaterial({
       color: LOCK_RED,
       emissive: LOCK_RED,
-      emissiveIntensity: 1,
+      emissiveIntensity: 0.9,
       roughness: 0.4,
-      toneMapped: false,
     });
     lockLamp.userData.shared = true;
   }
@@ -318,7 +318,6 @@ function lockGlowMaterial(base: THREE.SpriteMaterial, opacity: number): THREE.Sp
   if (!m) {
     m = base.clone();
     m.opacity = opacity;
-    m.toneMapped = false;
     m.userData.shared = true;
     lockGlows.set(opacity, m);
   }

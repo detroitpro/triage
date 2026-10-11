@@ -1,3 +1,4 @@
+import { POST } from "../../../src/world/post.ts";
 import type { Biome, Door, Hub, Placement, Region, World } from "../../../src/world/types.ts";
 import type { Bounds } from "../pure/collision.ts";
 
@@ -15,6 +16,7 @@ export const HUB_BIOME: Biome = {
   props: [],
   npcForm: "villager",
   sound: "town",
+  post: { ...POST.plaza },
 };
 
 /** A region or the hub, normalized so the renderer can treat them alike. */

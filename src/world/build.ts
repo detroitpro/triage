@@ -4,6 +4,7 @@ import type { GraphFile, LensAnalysis } from "../graph/types.ts";
 import { DIRECTED } from "../graph/types.ts";
 import { hash32, rng } from "../io.ts";
 import { biomeFor } from "./biome.ts";
+import { postProblems } from "./post.ts";
 import type { Door, LabelMeta, Placement, PlacementEdge, Region, Vec3, World } from "./types.ts";
 
 const DOOR_PRIORITY: Door["edgeType"][] = [
@@ -274,6 +275,9 @@ export function validateWorld(w: World, _analysis?: LensAnalysis): string[] {
     if (!ids.has(d.from) && d.from !== "hub") errors.push(`door ${d.id} from unknown region`);
     if (!ids.has(d.to) && d.to !== "hub") errors.push(`door ${d.id} to unknown region`);
   }
+  for (const r of w.regions)
+    if (r.biome.post)
+      for (const e of postProblems(r.biome.post)) errors.push(`region ${r.id} post: ${e}`);
   const reachable = new Set(w.hub.portals.map((p) => p.to));
   for (const r of w.regions)
     if (!reachable.has(r.id)) errors.push(`region ${r.id} unreachable from hub`);

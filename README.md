@@ -37,8 +37,8 @@ Screenshots from the checked-in fixture world (`web/public/fixtures/sample.world
 |-------------------------|---------------------|------------|
 | ![dungeon](docs/screenshots/dungeon.png) | ![dialogue](docs/screenshots/dialogue.png) | ![map](docs/screenshots/map.png) |
 
-Without `TYPESAFE_API_KEY`, typed questions are answered by an OpenRouter stand-in with
-the same response shape; swap in Jev by adding the key.
+Typed questions go to Jev. With only `OPENROUTER_API_KEY`, Jev is reached through
+OpenRouter's TypeSafe gateway (`~typesafe/jev-latest`); `TYPESAFE_API_KEY` calls it directly.
 
 ## Secrets
 
@@ -46,8 +46,8 @@ Never commit secrets. This repo is public.
 
 | Variable | Purpose |
 |----------|---------|
-| `OPENROUTER_API_KEY` | LLM calls via OpenRouter |
-| `TYPESAFE_API_KEY` | Jev System One API (`https://api.typesafe.ai/v1/systemone`) |
+| `OPENROUTER_API_KEY` | LLM calls via OpenRouter, and Jev via OpenRouter's gateway |
+| `TYPESAFE_API_KEY` | Optional: Jev System One API directly (`https://api.typesafe.ai/v1/systemone`) |
 | `GITHUB_TOKEN` | Reads issues; in `--live` mode also comments, labels, closes (`repo` scope). Falls back to `gh auth token` |
 | `TRIAGE_REPO`, `TRIAGE_REPO_PATH` | Target repository and its local clone |
 

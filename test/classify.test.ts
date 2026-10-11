@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { classifyAll, mentionedPaths, toClassified } from "../src/classify/index.ts";
 import { issueQuestions, THRESHOLDS } from "../src/questions.ts";
 import type { SystemOne } from "../src/systemone.ts";
-import { llmSystemOne } from "../src/systemone.ts";
+import { jevViaOpenRouter, llmSystemOne } from "../src/systemone.ts";
 import { AREAS, ISSUES } from "./fixtures/issues.ts";
 
 const Q = issueQuestions(AREAS.functional, AREAS.code);
@@ -113,6 +113,36 @@ describe("classifyAll", () => {
     expect(calls).toHaveLength(ISSUES.length);
     expect(out.issues.map((i) => i.number)).toEqual([1, 2, 3, 4, 5]);
     expect(out.model).toBe("fake");
+  });
+});
+
+describe("jevViaOpenRouter", () => {
+  it("sends the System One request to OpenRouter's gateway with the OpenRouter key", async () => {
+    const seen: { url: string; auth: string | null; body: { model?: string } }[] = [];
+    const fetchFake = async (url: string | URL | Request, init?: RequestInit) => {
+      seen.push({
+        url: String(url),
+        auth: new Headers(init?.headers).get("authorization"),
+        body: JSON.parse(String(init?.body)),
+      });
+      return new Response(
+        JSON.stringify({
+          model: "typesafe/jev-1.13",
+          answers: { actionable: { type: "noul", noul: 0.9 } },
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    };
+    const client = jevViaOpenRouter("or-key", fetchFake as typeof fetch);
+    const { answers } = await client.systemOne({
+      state: {},
+      questions: { actionable: Q.actionable },
+    });
+    expect(seen[0]?.url).toMatch(/^https:\/\/openrouter\.ai\/api\//);
+    expect(seen[0]?.auth).toBe("Bearer or-key");
+    expect(seen[0]?.body.model).toBe("~typesafe/jev-latest");
+    expect(answers.actionable.noul).toBe(0.9);
   });
 });
 

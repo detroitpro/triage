@@ -103,39 +103,16 @@ export function buildArea(
   const props = [...main, ...mid, ...decals];
   group.add(buildProps(props, biome, lib));
 
-  // Practicals: torches flicker, lanterns are steady. The rig caps them per region.
-  const practicalFamily = lib.kind === "dungeon" ? "torch" : "lamp";
-  const candidates = props.filter((p) => p.family === practicalFamily);
-  // Spread the capped practicals across the room instead of taking the first few.
-  const stride = Math.max(1, Math.floor(candidates.length / 4));
-  for (let i = 0; i < candidates.length; i += stride) {
-    const p = candidates[i];
-    if (!p) continue;
-    const pos = new THREE.Vector3(p.position[0], 0, p.position[2]);
-    const flicker = practicalFamily === "torch";
-    if (flicker) {
-      // The flame sits in front of the bracket, which faces into the room.
-      pos.x += Math.sin(p.rotation) * 0.25 * p.scale;
-      pos.z += Math.cos(p.rotation) * 0.25 * p.scale;
-      pos.y = 2.3 * p.scale;
-    } else {
-      pos.x += Math.cos(p.rotation) * 0.4 * p.scale;
-      pos.z -= Math.sin(p.rotation) * 0.4 * p.scale;
-      pos.y = 2.4 * p.scale;
-    }
-    const added = rig.addPractical(
-      pos,
-      flicker ? "#ff8a3c" : lib.kind === "industrial" ? "#ffcf7a" : "#ffd79a",
-      flicker ? 34 : 12,
-      flicker ? 18 : 12,
-      flicker ? 1 : 0.15,
-    );
-    if (!added) break;
-  }
-
-  // Every practical gets a glow card whether or not it earned a real light.
+  // Practicals: torches flicker, lanterns are steady. Each is an emissive prop plus glow
+  // cards, never a real-time light (charter "Look"), so every practical in the room glows
+  // and the light count, and with it every shader, stays fixed per biome.
+  const flame = lib.kind === "dungeon";
+  const candidates = props.filter((p) => p.family === (flame ? "torch" : "lamp"));
+  const poolMaterial = makeGlowSprite("#ff8a3c", 1).material.clone();
+  poolMaterial.opacity = 0.28;
+  poolMaterial.userData.shared = false;
   for (const p of candidates) {
-    const flame = practicalFamily === "torch";
+    // The flame sits in front of the bracket, which faces into the room.
     const glow = makeGlowSprite(flame ? "#ff9a4a" : "#ffe0a0", flame ? 1.6 : 1.1);
     glow.position.set(
       p.position[0] + (flame ? Math.sin(p.rotation) * 0.25 : Math.cos(p.rotation) * 0.4) * p.scale,
@@ -143,13 +120,13 @@ export function buildArea(
       p.position[2] + (flame ? Math.cos(p.rotation) * 0.25 : -Math.sin(p.rotation) * 0.4) * p.scale,
     );
     group.add(glow);
+    rig.addPractical(glow, flame ? 1 : 0.15);
+    // Torches get a warm pool on the floor and wall, the bounce a real light would give.
+    // Lamps do not: villages have dozens, and large transparent cards cost fill rate.
     if (flame) {
-      // Warm pool on the floor and wall: the bounce a real light would give.
       const pool = makeGlowSprite("#ff8a3c", 5.5);
+      pool.material = poolMaterial;
       pool.position.set(p.position[0], 1.2, p.position[2]);
-      pool.material = pool.material.clone();
-      pool.material.opacity = 0.28;
-      pool.material.userData.shared = false;
       group.add(pool);
     }
   }
@@ -170,7 +147,6 @@ export function buildArea(
   const doors = area.doors.map((d) => {
     const h = buildDoor(d, world, biome.palette.accent, lib);
     group.add(h.group);
-    if (h.light) lights.push(h.light);
     return h;
   });
 

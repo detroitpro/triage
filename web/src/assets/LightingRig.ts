@@ -5,12 +5,13 @@ import { biomeKind } from "./MaterialLibrary.ts";
 
 /**
  * Key + fill + rim from the biome numbers, one shadow-casting key, and flickering practicals
- * (torches, lanterns). Shadows only ever come from the key, and its map is static: rendered
+ * (torches, lanterns) that are glow cards, not lights: the light set is fixed per biome. Shadows only ever come from the key, and its map is static: rendered
  * once per area (or once per grid cell in areas larger than the map), never per frame. Only
  * static geometry casts; NPCs and anything animated ground themselves with contact discs.
  */
 export interface Practical {
-  light: THREE.PointLight;
+  glow: THREE.Sprite;
+  /** Resting scale of the glow card. */
   base: number;
   phase: number;
   /** 0 = steady, 1 = torch flicker. */
@@ -26,17 +27,16 @@ export interface LightingRig {
   update(camera: THREE.Camera, t: number): void;
   /** Redraw the static shadow map on the next frame (a caster was added, removed, or changed). */
   invalidateShadows(): void;
-  /** Add a practical point light; returns null once the per-region cap is reached. */
-  addPractical(
-    position: THREE.Vector3,
-    color: THREE.ColorRepresentation,
-    intensity: number,
-    distance: number,
-    flicker: number,
-  ): THREE.PointLight | null;
+  /** Register a practical's glow card so it flickers (0 = steady, 1 = torch). */
+  addPractical(glow: THREE.Sprite, flicker: number): void;
 }
 
-export const PRACTICAL_CAP = 4;
+/** Colour of the practicals (torches, lamps) per biome kind; areaBuilder uses it for the glow. */
+export const PRACTICAL_COLOR: Record<string, string> = {
+  dungeon: "#ff8a3c",
+  industrial: "#ffcf7a",
+  village: "#ffd79a",
+};
 export const SHADOW_MAP_SIZE = 2048;
 /** Direction toward the key light (sun or torch key), shared by every biome. */
 export const KEY_DIR = new THREE.Vector3(0.45, 1, 0.35).normalize();
@@ -230,11 +230,13 @@ export function buildLightingRig(biome: Biome, bounds: Bounds): LightingRig {
   group.add(rim, rim.target);
   lights.push(rim);
 
-  // Enclosed rooms get a bounce light from below so ceilings and beams are not black.
+  // Enclosed rooms get a bounce light from below so ceilings and beams are not black. It
+  // carries the warmth the practicals (glow cards, not lights) would have thrown on walls.
   if (biome.enclosure !== "open") {
+    const practical = new THREE.Color(PRACTICAL_COLOR[kind] ?? "#ffd79a");
     const bounce = new THREE.DirectionalLight(
-      ground.clone().offsetHSL(0, -0.1, 0.25),
-      dark ? 0.3 : 0.45,
+      ground.clone().offsetHSL(0, -0.1, 0.25).lerp(practical, 0.55),
+      dark ? 0.55 : 0.75,
     );
     bounce.position.set(bounds.x + bounds.w / 2, -10, bounds.z + bounds.d / 2);
     bounce.target.position.set(bounds.x + bounds.w / 2, 10, bounds.z + bounds.d / 2);
@@ -259,25 +261,12 @@ export function buildLightingRig(biome: Biome, bounds: Bounds): LightingRig {
         Math.sin(t * 11 + p.phase) * 0.5 +
         Math.sin(t * 23.7 + p.phase * 3) * 0.3 +
         Math.sin(t * 5.3 + p.phase * 7) * 0.2;
-      p.light.intensity = p.base * (1 + n * 0.18 * p.flicker);
+      p.glow.scale.setScalar(p.base * (1 + n * 0.18 * p.flicker));
     }
   };
 
-  const addPractical: LightingRig["addPractical"] = (
-    position,
-    color,
-    intensity,
-    distance,
-    flicker,
-  ) => {
-    if (practicals.length >= PRACTICAL_CAP) return null;
-    const light = new THREE.PointLight(color, intensity, distance, 2);
-    light.position.copy(position);
-    light.castShadow = false;
-    group.add(light);
-    lights.push(light);
-    practicals.push({ light, base: intensity, phase: practicals.length * 1.7, flicker });
-    return light;
+  const addPractical: LightingRig["addPractical"] = (glow, flicker) => {
+    practicals.push({ glow, base: glow.scale.x, phase: practicals.length * 1.7, flicker });
   };
 
   const invalidateShadows = () => {

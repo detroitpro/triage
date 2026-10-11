@@ -506,13 +506,11 @@ export class Game {
     if (i < 0) return;
     const old = built.doors[i] as DoorHandle;
     old.group.removeFromParent();
-    if (old.light) built.lights = built.lights.filter((l) => l !== old.light);
     const fresh = buildDoor(door, this.world, built.area.biome.palette.accent, built.lib);
     built.group.add(fresh.group);
     built.doors[i] = fresh;
     // Locked doors cast bars; the static shadow map must be redrawn without them (or with).
     built.rig.invalidateShadows();
-    if (fresh.light) built.lights.push(fresh.light);
   }
 
   /** The hourglass walk ends at the region's portal to the hub, else its entrance. */

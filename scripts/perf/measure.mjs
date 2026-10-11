@@ -3,6 +3,7 @@
 // numbers are only meaningful with PERF_VSYNC=1; without vsync the GPU queue stalls the CPU.
 //
 //   node scripts/perf/measure.mjs regions <world-url>            every area: frame time, renderer.info, build time
+//                                                                 (PERF_REGIONS=a,b to limit, PERF_REPEAT=n for a median)
 //   node scripts/perf/measure.mjs ablate <world-url> <region>     one area, one cost removed at a time
 //
 // Needs `npm run dev -w web` and @playwright/test (a web/ dev dependency, hoisted to the root) (PERF_URL, default http://localhost:5173) and a display.
@@ -127,9 +128,21 @@ async function sample(areaId, variant) {
 }
 
 if (mode === "regions") {
-  const ids = await page.evaluate(() => ["hub", ...window.__triage.world.regions.map((r) => r.id)]);
+  // PERF_REGIONS=a,b limits the tour; PERF_REPEAT=n reports the median-fps pass of n.
+  const only = process.env.PERF_REGIONS?.split(",");
+  const repeat = Number(process.env.PERF_REPEAT ?? 1);
+  const all = await page.evaluate(() => ["hub", ...window.__triage.world.regions.map((r) => r.id)]);
+  const ids = only ? all.filter((id) => only.includes(id)) : all;
   for (const id of ids) await sample(id); // warm-up: first visit compiles shaders
-  for (const id of ids) console.log(JSON.stringify(await sample(id)));
+  for (const id of ids) {
+    const runs = [];
+    for (let i = 0; i < repeat; i++) runs.push(await sample(id));
+    runs.sort((a, b) => a.fps - b.fps);
+    const median = runs[Math.floor(runs.length / 2)];
+    console.log(
+      JSON.stringify({ ...median, runs: repeat > 1 ? runs.map((r) => r.fps) : undefined }),
+    );
+  }
 } else {
   await sample(region);
   const variants = [

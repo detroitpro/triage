@@ -91,3 +91,12 @@ describe("post validation", () => {
     expect(postProblems({ ...POST.meadow, environment: 2, warmth: Number.NaN }).length).toBe(2);
   });
 });
+
+describe("post validation, missing and out-of-range keys", () => {
+  it("flags a missing motes value and an out-of-range one", async () => {
+    const { postProblems, POST } = await import("../src/world/post.ts");
+    const { motes: _drop, ...old } = POST.meadow;
+    expect(postProblems(old as typeof POST.meadow).join()).toMatch(/motes is missing/);
+    expect(postProblems({ ...POST.meadow, motes: 1.5 })).toHaveLength(1);
+  });
+});

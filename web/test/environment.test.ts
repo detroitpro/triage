@@ -46,3 +46,21 @@ describe("biome wind and clouds", () => {
     for (const p of Object.values(POST)) expect(postProblems({ ...p })).toEqual([]);
   });
 });
+
+describe("buildMotes", () => {
+  it("builds nothing at zero or missing density and is deterministic otherwise", async () => {
+    const { buildMotes } = await import("../src/assets/Motes.ts");
+    const { BIOMES } = await import("../../src/world/biome.ts");
+    const none = { ...BIOMES.MEADOW, post: { ...POST.meadow, motes: 0 } };
+    expect(buildMotes(none)).toBeNull();
+    const old = { ...BIOMES.MEADOW, post: { ...POST.meadow, motes: undefined } };
+    expect(buildMotes(old as unknown as typeof none)).toBeNull();
+    const half = { ...BIOMES.MEADOW, post: { ...POST.meadow, motes: 0.5 } };
+    const a = buildMotes(half);
+    const b = buildMotes(half);
+    expect(a?.geometry.attributes.seed?.count).toBe(300);
+    expect(Array.from(a?.geometry.attributes.seed?.array ?? [])).toEqual(
+      Array.from(b?.geometry.attributes.seed?.array ?? []),
+    );
+  });
+});

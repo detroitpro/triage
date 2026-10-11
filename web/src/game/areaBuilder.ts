@@ -181,6 +181,7 @@ export function buildArea(
 
   const sky = group.getObjectByName("sky");
   const motes = buildMotes(biome);
+  const drawSize = new THREE.Vector2();
   if (motes) group.add(motes);
 
   // Per-frame hook on a sentinel that renders first: renderer settings before any program
@@ -214,7 +215,7 @@ export function buildArea(
       WIND.value = performance.now() / 1000;
       // The sky dome follows the camera so no region is large enough to reach its edge.
       sky?.position.set(camera.position.x, 0, camera.position.z);
-      if (motes) followMotes(motes, camera, r.getPixelRatio());
+      if (motes) followMotes(motes, camera, r.getDrawingBufferSize(drawSize).y);
       installDiagnostics(r, scene, area.id, shadowMapSize);
     });
   };

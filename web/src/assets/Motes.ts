@@ -7,7 +7,9 @@ import { postFor } from "./PostStack.ts";
  * Ambient motes around the player (charter "Look", motion: nothing is perfectly still):
  * pollen in meadows, dust in halls, embers in dungeons. One Points draw call; every mote
  * drifts on the GPU and wraps inside a box that follows the camera, so the CPU only moves
- * the box. Density comes from the biome (`post.motes`); 0 builds nothing.
+ * the box. Density comes from the biome (`post.motes`); 0 builds nothing. The style table
+ * below is keyed by biome kind, which is itself derived only from biome fields (never issue
+ * data), so mood still follows the biome function.
  */
 const BOX = 24;
 const MAX = 600;
@@ -30,7 +32,8 @@ const STYLES: Record<string, Style> = {
 };
 
 export function buildMotes(biome: Biome): THREE.Points | null {
-  const density = postFor(biome).motes;
+  // World files built before motes existed have no value: treat as none.
+  const density = postFor(biome).motes ?? 0;
   const count = Math.round(MAX * density);
   if (count <= 0) return null;
   const style = STYLES[biomeKind(biome)] ?? (STYLES.meadow as Style);
@@ -56,10 +59,10 @@ export function buildMotes(biome: Biome): THREE.Points | null {
       uSize: { value: style.size },
       uRise: { value: style.rise },
       uBox: { value: BOX },
-      uPixelRatio: { value: 1 },
+      uScale: { value: 500 },
     },
     vertexShader: `attribute vec4 seed;
-      uniform float uTime, uSize, uRise, uBox, uPixelRatio;
+      uniform float uTime, uSize, uRise, uBox, uScale;
       uniform vec3 uCenter;
       varying float vFade;
       void main() {
@@ -72,16 +75,21 @@ export function buildMotes(biome: Biome): THREE.Points | null {
         vec4 mv = modelViewMatrix * vec4(p, 1.0);
         gl_Position = projectionMatrix * mv;
         // Fade near the box edges so wrapping never pops, and twinkle gently.
-        vec3 local = abs(p - uCenter) / vec3(uBox * 0.5, 4.0, uBox * 0.5);
-        vFade = (1.0 - smoothstep(0.7, 1.0, max(local.x, local.z))) * (0.6 + 0.4 * sin(uTime * 2.0 + seed.w * 40.0));
-        gl_PointSize = uSize * uPixelRatio * 900.0 / max(-mv.z, 0.5);
+        // The box spans 2 m below to 6 m above the camera: its centre is 2 m up.
+        vec3 local = abs(p - (uCenter + vec3(0.0, 2.0, 0.0))) / vec3(uBox * 0.5, 4.0, uBox * 0.5);
+        float edge = max(max(local.x, local.z), local.y);
+        vFade = (1.0 - smoothstep(0.7, 1.0, edge)) * (0.6 + 0.4 * sin(uTime * 2.0 + seed.w * 40.0));
+        // World-size points: projection scale times half the drawing-buffer height, capped
+        // so one mote drifting past the lens never becomes a blob over a dialogue target.
+        gl_PointSize = min(uSize * projectionMatrix[1][1] * uScale / max(-mv.z, 0.5), 24.0);
       }`,
     fragmentShader: `uniform vec3 uColor;
       varying float vFade;
       void main() {
         float d = length(gl_PointCoord - 0.5);
         float a = smoothstep(0.5, 0.0, d) * vFade;
-        gl_FragColor = vec4(uColor * a, a);
+        // Additive blending already multiplies by alpha.
+        gl_FragColor = vec4(uColor, a);
       }`,
   });
   mat.userData.shared = false;
@@ -93,8 +101,12 @@ export function buildMotes(biome: Biome): THREE.Points | null {
 }
 
 /** Recentre the mote box on the camera (call from the frame hook). */
-export function followMotes(points: THREE.Points, camera: THREE.Camera, pixelRatio: number): void {
+export function followMotes(
+  points: THREE.Points,
+  camera: THREE.Camera,
+  bufferHeight: number,
+): void {
   const u = (points.material as THREE.ShaderMaterial).uniforms;
   u.uCenter?.value.copy(camera.position);
-  if (u.uPixelRatio) u.uPixelRatio.value = pixelRatio;
+  if (u.uScale) u.uScale.value = bufferHeight * 0.5;
 }

@@ -70,7 +70,8 @@ export const POST = {
 /** Problems with a post block, for validateWorld. */
 export function postProblems(p: BiomePost): string[] {
   const out: string[] = [];
-  for (const [k, v] of Object.entries(p)) if (!Number.isFinite(v)) out.push(`${k} is not finite`);
+  for (const k of Object.keys(POST.meadow) as (keyof BiomePost)[])
+    if (!Number.isFinite(p[k])) out.push(`${k} is missing or not finite`);
   if (p.bloom < 0 || p.bloom > 2) out.push(`bloom ${p.bloom} outside 0..2`);
   if (p.environment < 0 || p.environment > 1) out.push(`environment ${p.environment} outside 0..1`);
   if (p.warmth < -1 || p.warmth > 1) out.push(`warmth ${p.warmth} outside -1..1`);

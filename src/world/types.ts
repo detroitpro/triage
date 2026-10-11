@@ -52,6 +52,8 @@ export interface BiomePost {
   wind: number;
   /** Cloud cover on the sky dome, 0..1 (open biomes only). */
   clouds: number;
+  /** Ambient motes (pollen, dust, embers) around the player, 0 = none .. 1 = dense. */
+  motes: number;
 }
 
 export interface Dimensions {

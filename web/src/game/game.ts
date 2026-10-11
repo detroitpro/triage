@@ -295,6 +295,9 @@ export class Game {
     this.player.update(dt);
     const built = this.built;
     if (!built) return;
+    // Ambient motes are decoration in motion: reduced motion turns them off.
+    const motes = built.group.getObjectByName("motes");
+    if (motes) motes.visible = !this.settings.reducedMotion;
     const talking = this.dialogue.open ? this.dialogue.current?.issue : undefined;
     for (const n of built.npcs.values()) {
       if (!built.crowd.isNear(n.placement.issue)) continue;

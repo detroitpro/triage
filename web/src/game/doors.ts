@@ -118,7 +118,6 @@ function buildPortal(group: THREE.Group, lib: MaterialLibrary, locked: boolean):
   outer.add(runes);
   for (const r of [outer, mid, inner]) {
     r.position.y = 2.0;
-    r.castShadow = true;
     group.add(r);
     rings.push(r);
   }

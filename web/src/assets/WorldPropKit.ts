@@ -590,9 +590,12 @@ export function matrixAt(
 
 // ---- contact shadow -----------------------------------------------------------------
 
-let contactMaterial: THREE.MeshBasicMaterial | null = null;
+const contactMaterials = new Map<number, THREE.MeshBasicMaterial>();
 /** Dark soft disc under NPCs and props: cheaper than a shadow and never missing. */
 export function makeContactDisc(radius: number, opacity = 0.55): THREE.Mesh {
+  // One shared material per opacity: NPCs no longer cast into the shadow map, so the disc is
+  // their only grounding, and floating and standing forms need different strengths.
+  let contactMaterial = contactMaterials.get(opacity);
   if (!contactMaterial) {
     contactMaterial = new THREE.MeshBasicMaterial({
       map: radialFalloff(),
@@ -602,6 +605,7 @@ export function makeContactDisc(radius: number, opacity = 0.55): THREE.Mesh {
       depthWrite: false,
     });
     contactMaterial.userData.shared = true;
+    contactMaterials.set(opacity, contactMaterial);
   }
   const disc = new THREE.Mesh(
     geo("contact.disc", () => new THREE.PlaneGeometry(2, 2)),

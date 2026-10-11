@@ -4,8 +4,10 @@ import type { Bounds } from "../pure/collision.ts";
 import { biomeKind } from "./MaterialLibrary.ts";
 
 /**
- * Key + fill + rim from the biome numbers, one shadow-casting key that follows the camera,
- * and flickering practicals (torches, lanterns). Shadows only ever come from the key.
+ * Key + fill + rim from the biome numbers, one shadow-casting key, and flickering practicals
+ * (torches, lanterns). Shadows only ever come from the key, and its map is static: rendered
+ * once per area (or once per grid cell in areas larger than the map), never per frame. Only
+ * static geometry casts; NPCs and anything animated ground themselves with contact discs.
  */
 export interface Practical {
   light: THREE.PointLight;
@@ -20,8 +22,10 @@ export interface LightingRig {
   lights: THREE.Light[];
   key: THREE.DirectionalLight;
   practicals: Practical[];
-  /** Call once per frame with the active camera. */
+  /** Call once per frame with the active camera. Marks the shadow map for redraw when it moves. */
   update(camera: THREE.Camera, t: number): void;
+  /** Redraw the static shadow map on the next frame (a caster was added, removed, or changed). */
+  invalidateShadows(): void;
   /** Add a practical point light; returns null once the per-region cap is reached. */
   addPractical(
     position: THREE.Vector3,
@@ -34,6 +38,94 @@ export interface LightingRig {
 
 export const PRACTICAL_CAP = 4;
 export const SHADOW_MAP_SIZE = 2048;
+/** Direction toward the key light (sun or torch key), shared by every biome. */
+export const KEY_DIR = new THREE.Vector3(0.45, 1, 0.35).normalize();
+/** Half the side of the shadow square around the player in areas too big to fit, in metres. */
+export const SHADOW_HALF = 30;
+/** In areas too big to fit, the map recentres on the player in steps of this many metres. */
+export const SHADOW_STEP = 8;
+/** Areas whose light-space half extent is at most this get one static map over the whole area. */
+export const SHADOW_FIT_MAX = 44;
+/** Tallest static caster (walls, pillars, trees) the fitted map must contain, in metres. */
+export const CASTER_HEIGHT = 7;
+
+/** Shadow camera placement: target on the ground and orthographic bounds in light space. */
+export interface ShadowFit {
+  /** True when one map covers the whole area. */
+  fitted: boolean;
+  center: [number, number];
+  left: number;
+  right: number;
+  bottom: number;
+  top: number;
+}
+
+const UP = new THREE.Vector3(0, 1, 0);
+const basis = new THREE.Matrix4();
+const point = new THREE.Vector3();
+
+/** Light-space x, y of a world point for a key light aimed at (cx, 0, cz). */
+export function toLightSpace(
+  cx: number,
+  cz: number,
+  x: number,
+  y: number,
+  z: number,
+): [number, number] {
+  const eye = point.set(cx, 0, cz).addScaledVector(KEY_DIR, 40).clone();
+  basis.lookAt(eye, new THREE.Vector3(cx, 0, cz), UP);
+  point.set(x, y, z).sub(eye);
+  // basis is a pure rotation; its transpose takes world offsets into light space.
+  const e = basis.elements;
+  return [
+    e[0] * point.x + e[1] * point.y + e[2] * point.z,
+    e[4] * point.x + e[5] * point.y + e[6] * point.z,
+  ];
+}
+
+/**
+ * Where the shadow map sits. An area whose box (floor to CASTER_HEIGHT) fits within
+ * SHADOW_FIT_MAX in light space gets one map fitted to that box, drawn once. Larger areas
+ * get a SHADOW_HALF square around the player's position snapped to a SHADOW_STEP grid, so
+ * the map is redrawn only when the player crosses a cell and the player stays within about
+ * SHADOW_STEP * 0.71 metres of its centre in light space. Looking around never moves it.
+ */
+export function shadowFit(bounds: Bounds, x: number, z: number): ShadowFit {
+  const cx = bounds.x + bounds.w / 2;
+  const cz = bounds.z + bounds.d / 2;
+  let left = Infinity;
+  let right = -Infinity;
+  let bottom = Infinity;
+  let top = -Infinity;
+  for (const px of [bounds.x, bounds.x + bounds.w])
+    for (const pz of [bounds.z, bounds.z + bounds.d])
+      for (const py of [0, CASTER_HEIGHT]) {
+        const [lx, ly] = toLightSpace(cx, cz, px, py, pz);
+        left = Math.min(left, lx);
+        right = Math.max(right, lx);
+        bottom = Math.min(bottom, ly);
+        top = Math.max(top, ly);
+      }
+  if (Math.max(-left, right, -bottom, top) <= SHADOW_FIT_MAX)
+    return {
+      fitted: true,
+      center: [cx, cz],
+      left: left - 1,
+      right: right + 1,
+      bottom: bottom - 1,
+      top: top + 1,
+    };
+  const sx = Math.round(x / SHADOW_STEP) * SHADOW_STEP;
+  const sz = Math.round(z / SHADOW_STEP) * SHADOW_STEP;
+  return {
+    fitted: false,
+    center: [sx, sz],
+    left: -SHADOW_HALF,
+    right: SHADOW_HALF,
+    bottom: -SHADOW_HALF,
+    top: SHADOW_HALF,
+  };
+}
 
 /** ACES exposure per biome: dark biomes get lifted so torchlight reads, bright ones stay crisp. */
 export function exposureFor(biome: Biome): number {
@@ -61,7 +153,8 @@ export function configureRenderer(renderer: THREE.WebGLRenderer, biome: Biome): 
   renderer.toneMappingExposure = exposureFor(biome);
   if (!renderer.shadowMap.enabled) {
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // three r186 removed PCFSoftShadowMap; PCF with shadow.radius is the soft option.
+    renderer.shadowMap.type = THREE.PCFShadowMap;
   }
   return true;
 }
@@ -95,16 +188,32 @@ export function buildLightingRig(biome: Biome, bounds: Bounds): LightingRig {
   key.castShadow = true;
   key.shadow.mapSize.set(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
   const cam = key.shadow.camera;
-  const half = 26;
-  cam.left = -half;
-  cam.right = half;
-  cam.top = half;
-  cam.bottom = -half;
   cam.near = 1;
   cam.far = 90;
   key.shadow.bias = -0.0006;
   key.shadow.normalBias = 0.03;
   key.shadow.radius = 2;
+  key.shadow.autoUpdate = false;
+  key.shadow.needsUpdate = false;
+  let placed = "";
+  const place = (fit: ShadowFit) => {
+    const id = `${fit.center[0]},${fit.center[1]}`;
+    if (id === placed) return;
+    placed = id;
+    key.target.position.set(fit.center[0], 0, fit.center[1]);
+    key.position.copy(key.target.position).addScaledVector(KEY_DIR, 40);
+    cam.left = fit.left;
+    cam.right = fit.right;
+    cam.bottom = fit.bottom;
+    cam.top = fit.top;
+    cam.updateProjectionMatrix();
+    key.target.updateMatrixWorld();
+    key.updateMatrixWorld();
+    key.shadow.needsUpdate = true;
+  };
+  // Areas that fit are placed now, so the first frame already draws the right map.
+  const initial = shadowFit(bounds, bounds.x + bounds.w / 2, bounds.z + bounds.d / 2);
+  if (initial.fitted) place(initial);
   group.add(key, key.target);
   lights.push(key);
 
@@ -134,24 +243,14 @@ export function buildLightingRig(biome: Biome, bounds: Bounds): LightingRig {
   }
 
   const practicals: Practical[] = [];
-  const keyDir = new THREE.Vector3(0.45, 1, 0.35).normalize();
   const forward = new THREE.Vector3();
-  const anchor = new THREE.Vector3();
   const cx = bounds.x + bounds.w / 2;
   const cz = bounds.z + bounds.d / 2;
   fill.target.position.set(cx, 0, cz);
 
   const update = (camera: THREE.Camera, t: number) => {
-    // Key light tracks the player so the 2048 map stays sharp around what they look at.
     camera.getWorldDirection(forward);
-    anchor.copy(camera.position);
-    anchor.y = 0;
-    anchor.addScaledVector(forward.setY(0).normalize(), 8);
-    // Snap the shadow anchor to a grid so edges do not swim while walking.
-    anchor.x = Math.round(anchor.x / 2) * 2;
-    anchor.z = Math.round(anchor.z / 2) * 2;
-    key.target.position.copy(anchor);
-    key.position.copy(anchor).addScaledVector(keyDir, 40);
+    place(shadowFit(bounds, camera.position.x, camera.position.z));
     rim.target.position.copy(camera.position).setY(0);
     rim.position.copy(camera.position).addScaledVector(forward, 22).setY(12);
     for (const p of practicals) {
@@ -181,5 +280,9 @@ export function buildLightingRig(biome: Biome, bounds: Bounds): LightingRig {
     return light;
   };
 
-  return { group, lights, key, practicals, update, addPractical };
+  const invalidateShadows = () => {
+    key.shadow.needsUpdate = true;
+  };
+
+  return { group, lights, key, practicals, update, invalidateShadows, addPractical };
 }

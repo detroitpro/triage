@@ -3,7 +3,8 @@
 
 import type { NpcForm } from "../../../src/world/types.ts";
 
-/** Total size of everything under web/public/assets, in bytes (charter decision: ~20 MB). */
+/** Total size of the assets in the manifest, in bytes (charter decision: ~20 MB). The test
+ * also requires every file under web/public/assets to be listed, so nothing bypasses it. */
 export const ASSET_BUDGET_BYTES = 20 * 1024 * 1024;
 
 export interface AssetProvenance {
@@ -12,6 +13,10 @@ export interface AssetProvenance {
   /** Provider task IDs, in pipeline order (model, rig, animations). */
   taskIds: string[];
   prompt: string;
+  /** Provider seed when one was used, for regeneration. */
+  seed?: number | string;
+  /** Licence of the output under the provider's terms, e.g. "Tripo paid plan: commercial use". */
+  license: string;
   /** Link to the provider's output terms, checked before the asset landed. */
   terms: string;
   generatedAt: string;
@@ -42,6 +47,12 @@ export function characterFor(m: AssetManifest, form: NpcForm): CharacterAsset | 
 }
 
 /** Problems with the manifest; `sizeOf` returns a file's size in bytes, or null if missing. */
+/** Files under the assets folder that the manifest does not list (the manifest itself aside). */
+export function unlisted(m: AssetManifest, files: readonly string[]): string[] {
+  const listed = new Set(m.assets.map((a) => a.file));
+  return files.filter((f) => f !== "manifest.json" && !listed.has(f));
+}
+
 export function validateManifest(
   m: AssetManifest,
   sizeOf: (file: string) => number | null,
@@ -67,7 +78,8 @@ export function validateManifest(
         errors.push(`${where}: height ${a.height} out of range`);
     }
     const p = a.provenance;
-    if (!p?.provider || !p.prompt || !p.generatedAt) errors.push(`${where}: incomplete provenance`);
+    if (!p?.provider || !p.prompt || !p.generatedAt || !p.license)
+      errors.push(`${where}: incomplete provenance`);
     if (p && p.provider !== "procedural" && p.provider !== "hand" && !/^https:\/\//.test(p.terms))
       errors.push(`${where}: provider terms link missing`);
   }

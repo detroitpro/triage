@@ -475,12 +475,12 @@ export class Verbs {
 
   // ---- animations ------------------------------------------------------------------------
 
-  /** Live release: the NPC shrinks with a light pulse and leaves. */
   /** Is this NPC playing its live release (bow-out)? */
   leaving(issue: number): boolean {
     return this.bowing.has(issue);
   }
 
+  /** Live release: the NPC shrinks with a light pulse and leaves. */
   private bowOut(h: NpcHandle): () => void {
     this.bowing.add(h.placement.issue);
     h.authored.character?.play("leave", 0.15);

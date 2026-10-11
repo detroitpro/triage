@@ -157,12 +157,16 @@ function bakedBody(form: NpcForm, lib: MaterialLibrary): BakedPart[] {
       g.deleteAttribute("skinIndex");
       g.deleteAttribute("skinWeight");
     }
+    // Smooth normals from the indexed pose (de-indexing first would facet them).
+    if (o instanceof THREE.SkinnedMesh) g.computeVertexNormals();
     if (g.index) g = g.toNonIndexed();
     g.applyMatrix4(o.matrixWorld);
-    if (o instanceof THREE.SkinnedMesh) g.computeVertexNormals();
     if (mat.map) {
-      for (const name of Object.keys(g.attributes))
-        if (name !== "position" && name !== "normal" && name !== "uv") g.deleteAttribute(name);
+      // Keep what the model's own material reads: uvs, plus vertex colours or a second uv set.
+      const keep = new Set(["position", "normal", "uv"]);
+      if (mat.vertexColors) keep.add("color");
+      if (mat.aoMap || mat.lightMap) keep.add("uv1");
+      for (const name of Object.keys(g.attributes)) if (!keep.has(name)) g.deleteAttribute(name);
       const list = textured.get(mat) ?? [];
       list.push(g);
       textured.set(mat, list);
@@ -183,12 +187,19 @@ function bakedBody(form: NpcForm, lib: MaterialLibrary): BakedPart[] {
   const parts: BakedPart[] = [];
   const merge = (list: THREE.BufferGeometry[]) => {
     const out = list.length === 1 ? list[0] : mergeGeometries(list, false);
-    if (!out) throw new Error(`could not bake NPC form ${form}`);
-    out.userData.shared = true;
+    if (out) out.userData.shared = true;
     return out;
   };
-  if (flat.length) parts.push({ geometry: merge(flat), material: crowdMaterial(lib) });
-  for (const [material, list] of textured) parts.push({ geometry: merge(list), material });
+  if (flat.length) {
+    const geometry = merge(flat);
+    if (geometry) parts.push({ geometry, material: crowdMaterial(lib) });
+  }
+  for (const [material, list] of textured) {
+    const geometry = merge(list);
+    // Parts whose attribute sets differ cannot merge; drop that part rather than the crowd.
+    if (geometry) parts.push({ geometry, material });
+    else console.warn(`crowd: could not merge ${form} parts for one material; skipped`);
+  }
   byForm.set(form, parts);
   return parts;
 }

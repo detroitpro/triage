@@ -33,6 +33,8 @@ export interface CharacterInstance {
   play(role: string, fade?: number): void;
   /** Advance the mixer to `t` seconds. */
   update(t: number): void;
+  /** Stop and release the mixer's cached actions. */
+  dispose(): void;
   height: number;
 }
 
@@ -44,21 +46,31 @@ export async function preloadCharacters(
   fetchFn: typeof fetch = fetch,
   timeoutMs = 8000,
 ): Promise<NpcForm[]> {
-  let manifest: AssetManifest;
+  // One deadline covers the manifest and every model: boot never waits longer than this.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<null>((r) => {
+    timer = setTimeout(() => r(null), timeoutMs);
+  });
+  let manifest: AssetManifest | null;
   try {
-    const res = await fetchFn(MANIFEST_URL);
-    if (!res.ok) return [];
-    manifest = (await res.json()) as AssetManifest;
+    manifest = await Promise.race([
+      fetchFn(MANIFEST_URL).then((res) => (res.ok ? (res.json() as Promise<AssetManifest>) : null)),
+      deadline,
+    ]);
   } catch {
+    manifest = null;
+  }
+  if (!manifest || !Array.isArray(manifest.assets)) {
+    clearTimeout(timer);
     return [];
   }
   const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
   const forms: NpcForm[] = ["creature", "villager", "worker", "shade"];
   const loaded: NpcForm[] = [];
-  const deadline = new Promise<null>((r) => setTimeout(() => r(null), timeoutMs));
+  const kit = manifest;
   await Promise.all(
     forms.map(async (form) => {
-      const asset = characterFor(manifest, form);
+      const asset = characterFor(kit, form);
       if (!asset) return;
       try {
         const gltf = await Promise.race([loader.loadAsync(`/assets/${asset.file}`), deadline]);
@@ -70,6 +82,7 @@ export async function preloadCharacters(
       }
     }),
   );
+  clearTimeout(timer);
   return loaded;
 }
 
@@ -121,15 +134,18 @@ export function instantiateCharacter(template: CharacterTemplate, phase = 0): Ch
   let current: THREE.AnimationAction | null = null;
   let last: number | null = null;
   const play = (role: string, fade = 0.25) => {
-    const clip = template.clips.get(role) ?? template.clips.get("idle");
+    const resolved = template.clips.has(role) ? role : "idle";
+    const clip = template.clips.get(resolved);
     if (!clip) return;
     const next = mixer.clipAction(clip);
     if (next === current) return;
-    next.reset().play();
-    if (role === "leave" || role === "react") {
-      next.setLoop(THREE.LoopOnce, 1);
-      next.clampWhenFinished = true;
-    }
+    // Loop mode follows the clip that actually plays: a missing "leave" falls back to an
+    // idle that must keep looping.
+    const once = resolved === "leave" || resolved === "react";
+    next.reset();
+    next.setLoop(once ? THREE.LoopOnce : THREE.LoopRepeat, once ? 1 : Number.POSITIVE_INFINITY);
+    next.clampWhenFinished = once;
+    next.play();
     if (current) next.crossFadeFrom(current, fade, false);
     current = next;
   };
@@ -137,6 +153,8 @@ export function instantiateCharacter(template: CharacterTemplate, phase = 0): Ch
   // Desynchronise idles so a crowd does not breathe in step.
   if (current)
     (current as THREE.AnimationAction).time = phase * (template.clips.get("idle")?.duration ?? 1);
+  // Pose now: reduced motion never advances the mixer, and nothing should show the T-pose.
+  mixer.update(0);
   return {
     root,
     mixer,
@@ -146,5 +164,9 @@ export function instantiateCharacter(template: CharacterTemplate, phase = 0): Ch
       last = t;
     },
     height: template.height,
+    dispose() {
+      mixer.stopAllAction();
+      mixer.uncacheRoot(root);
+    },
   };
 }

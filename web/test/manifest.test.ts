@@ -1,7 +1,7 @@
-import { readFileSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { type AssetManifest, validateManifest } from "../src/pure/manifest.ts";
+import { type AssetManifest, unlisted, validateManifest } from "../src/pure/manifest.ts";
 
 const ASSETS = resolve(import.meta.dirname, "..", "public", "assets");
 const sizeOf = (file: string) => {
@@ -16,6 +16,14 @@ describe("checked-in asset manifest", () => {
   it("is valid, complete, and within the budget", () => {
     const m = JSON.parse(readFileSync(resolve(ASSETS, "manifest.json"), "utf8")) as AssetManifest;
     expect(validateManifest(m, sizeOf)).toEqual([]);
+  });
+
+  it("lists every file in the assets folder, so nothing skips the budget or provenance", () => {
+    const m = JSON.parse(readFileSync(resolve(ASSETS, "manifest.json"), "utf8")) as AssetManifest;
+    const files = readdirSync(ASSETS, { recursive: true, withFileTypes: true })
+      .filter((d) => d.isFile())
+      .map((d) => resolve(d.parentPath, d.name).slice(ASSETS.length + 1));
+    expect(unlisted(m, files)).toEqual([]);
   });
 });
 
@@ -33,6 +41,7 @@ describe("validateManifest", () => {
       provider: "tripo",
       taskIds: ["t1"],
       prompt: "stylized villager",
+      license: "test",
       terms: "https://example.com/terms",
       generatedAt: "2026-10-11",
     },
@@ -61,5 +70,42 @@ describe("validateManifest", () => {
   it("allows one character per form", () => {
     const two = validateManifest({ version: 1, assets: [asset, { ...asset, id: "b" }] }, () => 100);
     expect(two.join()).toMatch(/second character/);
+  });
+});
+
+describe("validateManifest, remaining rules", () => {
+  const base = {
+    id: "a",
+    kind: "character" as const,
+    form: "worker" as const,
+    file: "npc/worker.glb",
+    bytes: 1,
+    triangles: 1,
+    height: 1.8,
+    clips: { idle: "Idle" },
+    provenance: {
+      provider: "tripo",
+      taskIds: [],
+      prompt: "p",
+      license: "l",
+      terms: "https://example.com",
+      generatedAt: "2026-10-11",
+    },
+  };
+  const one = (a: object) => validateManifest({ version: 1, assets: [a as typeof base] }, () => 1);
+
+  it("rejects bad paths, heights, missing idle, and missing licence", () => {
+    expect(one({ ...base, file: "../x.glb" }).join()).toMatch(/path/);
+    expect(one({ ...base, height: 9 }).join()).toMatch(/height/);
+    expect(one({ ...base, clips: {} }).join()).toMatch(/idle/);
+    expect(one({ ...base, provenance: { ...base.provenance, license: "" } }).join()).toMatch(
+      /provenance/,
+    );
+  });
+
+  it("finds files the manifest does not list", () => {
+    expect(unlisted({ version: 1, assets: [base] }, ["npc/worker.glb", "stray.glb"])).toEqual([
+      "stray.glb",
+    ]);
   });
 });

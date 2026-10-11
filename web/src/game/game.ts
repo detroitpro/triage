@@ -5,6 +5,13 @@ import type { Action } from "../pure/actions.ts";
 import { distanceXZ } from "../pure/collision.ts";
 import { findTriggeredDoor, rearmDoors } from "../pure/doors.ts";
 import { isReviewed, setReviewed } from "../pure/progress.ts";
+import {
+  DynamicResolution,
+  PROFILES,
+  type QualityProfile,
+  resolveTier,
+  type Tier,
+} from "../pure/quality.ts";
 import { lensUrl } from "../pure/worldUrl.ts";
 import { Api } from "./api.ts";
 import { type BuiltArea, buildArea, disposeArea } from "./areaBuilder.ts";
@@ -46,6 +53,23 @@ export interface TriageDebug {
   simulateLive(on: boolean): void;
   api: Api;
   world: World;
+  /** Resolved quality tier and the current dynamic resolution scale. */
+  quality(): { tier: Tier; scale: number; pixelRatio: number };
+}
+
+/** The unmasked GPU name, when the browser exposes it; used only to pick the "auto" tier. */
+function gpuName(): string | null {
+  const gl = document.createElement("canvas").getContext("webgl2");
+  if (!gl) return null;
+  try {
+    const ext = gl.getExtension("WEBGL_debug_renderer_info");
+    // Firefox exposes the real name through RENDERER and has no debug extension.
+    return String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER) ?? "") || null;
+  } catch {
+    return null;
+  } finally {
+    gl.getExtension("WEBGL_lose_context")?.loseContext();
+  }
 }
 
 export class Game {
@@ -59,6 +83,10 @@ export class Game {
   private verbs: Verbs;
   private api: Api;
   private settings: Settings;
+  private autoTier: Tier;
+  private profile: QualityProfile;
+  private dynres: DynamicResolution;
+  private lastFrameAt = 0;
   private built: BuiltArea | null = null;
   private armedDoors = new Set<string>();
   private edgeLines = new THREE.Group();
@@ -80,8 +108,12 @@ export class Game {
     canvas: HTMLCanvasElement,
   ) {
     this.settings = loadSettings();
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.autoTier = resolveTier("auto", gpuName());
+    this.profile =
+      PROFILES[this.settings.quality === "auto" ? this.autoTier : this.settings.quality];
+    this.dynres = new DynamicResolution(this.profile.minScale, this.profile.maxScale);
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: this.profile.antialias });
+    this.renderer.setPixelRatio(this.basePixelRatio());
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.player = new Player(canvas, this.settings);
     this.scene.add(this.edgeLines);
@@ -144,7 +176,12 @@ export class Game {
       repo: () => this.world.repo,
       offline: () => this.api.offline,
     });
-    mountSettings(this.overlays.settings, this.settings, () => this.player.applySettings());
+    mountSettings(
+      this.overlays.settings,
+      this.settings,
+      () => this.player.applySettings(),
+      this.autoTier,
+    );
     el("gear").addEventListener("click", () => this.toggle("settings"));
     this.overlays.settings.addEventListener("click", (e) => {
       if (e.target === this.overlays.settings) this.toggle("settings");
@@ -179,7 +216,13 @@ export class Game {
     const go = () => {
       if (this.built) disposeArea(this.built);
       this.departed.clear();
-      this.built = buildArea(area, this.world, (i) => isReviewed(localStorage, this.world.repo, i));
+      this.built = buildArea(
+        area,
+        this.world,
+        (i) => isReviewed(localStorage, this.world.repo, i),
+        this.profile.shadowMapSize,
+      );
+      this.dynres.reset();
       // Released issues stay gone until the world is rebuilt by the pipeline.
       for (const p of area.placements) if (this.isReleased(p.issue)) this.removeNpc(p.issue);
       this.scene.add(this.built.group);
@@ -216,7 +259,16 @@ export class Game {
 
   // ---- loop -------------------------------------------------------------------
 
+  /** Device pixel ratio capped by the tier, before dynamic scaling. */
+  private basePixelRatio(): number {
+    return Math.min(window.devicePixelRatio, this.profile.maxDpr);
+  }
+
   private frame(): void {
+    const now = performance.now();
+    if (this.lastFrameAt && this.dynres.update(now - this.lastFrameAt))
+      this.renderer.setPixelRatio(this.basePixelRatio() * this.dynres.scale);
+    this.lastFrameAt = now;
     const dt = Math.min(0.05, this.clock.getDelta());
     const t = this.clock.elapsedTime;
     this.player.update(dt);
@@ -277,6 +329,8 @@ export class Game {
       this.verbs.keyDown(e, true);
       return;
     }
+    // Tab moves focus inside the settings panel; everywhere else it opens the map.
+    if (e.code === "Tab" && !this.overlays.settings.classList.contains("hidden")) return;
     if (e.code === "Tab") {
       e.preventDefault();
       if (this.map.open) this.map.hide();
@@ -637,6 +691,11 @@ export class Game {
       },
       api: this.api,
       world: this.world,
+      quality: () => ({
+        tier: this.profile.tier,
+        scale: this.dynres.scale,
+        pixelRatio: this.renderer.getPixelRatio(),
+      }),
     };
     (window as unknown as { __triage: TriageDebug }).__triage = api;
   }

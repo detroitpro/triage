@@ -61,6 +61,7 @@ export function buildArea(
   area: Area,
   world: World,
   reviewed: (issue: number) => boolean,
+  shadowMapSize = SHADOW_MAP_SIZE,
 ): BuiltArea {
   const { biome, bounds } = area;
   const lib = getMaterialLibrary(biome);
@@ -84,7 +85,7 @@ export function buildArea(
   for (const o of enclosure) group.add(o);
 
   // Lighting rig from the biome numbers only.
-  const rig = buildLightingRig(biome, bounds);
+  const rig = buildLightingRig(biome, bounds, shadowMapSize);
   group.add(rig.group);
   const lights: THREE.Light[] = [...rig.lights];
 
@@ -194,7 +195,7 @@ export function buildArea(
         });
       }
       rig.update(camera, (performance.now() - start) / 1000);
-      installDiagnostics(r, scene, area.id, SHADOW_MAP_SIZE);
+      installDiagnostics(r, scene, area.id, shadowMapSize);
     });
   };
   group.add(sentinel);

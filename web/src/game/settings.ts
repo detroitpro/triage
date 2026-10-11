@@ -1,4 +1,8 @@
+import type { QualityChoice } from "../pure/quality.ts";
+
 export interface Settings {
+  /** Render quality tier; "auto" picks from the GPU. Applies on reload (MSAA is per context). */
+  quality: QualityChoice;
   fov: number;
   sensitivity: number;
   reducedMotion: boolean;
@@ -8,6 +12,7 @@ export interface Settings {
 
 const KEY = "triage:settings";
 export const DEFAULT_SETTINGS: Settings = {
+  quality: "auto",
   fov: 75,
   sensitivity: 1,
   reducedMotion: false,
@@ -24,6 +29,7 @@ export function loadSettings(): Settings {
     const raw = localStorage.getItem(KEY);
     const parsed = raw ? (JSON.parse(raw) as Partial<Settings>) : {};
     s = {
+      quality: parsed.quality === "low" || parsed.quality === "high" ? parsed.quality : "auto",
       fov: num(parsed.fov, DEFAULT_SETTINGS.fov, 50, 110),
       sensitivity: num(parsed.sensitivity, DEFAULT_SETTINGS.sensitivity, 0.2, 3),
       reducedMotion: Boolean(parsed.reducedMotion),
@@ -90,6 +96,8 @@ export function mountSettings(
   root: HTMLElement,
   settings: Settings,
   onChange: (s: Settings) => void,
+  /** The tier "auto" resolved to on this machine, shown next to the choice. */
+  autoTier = "",
 ): void {
   const rows = RANGES.map(
     (r) => `<label class="setting">
@@ -102,6 +110,16 @@ export function mountSettings(
   root.innerHTML = `
     <div class="panel">
       <h2>Settings</h2>
+      <label class="setting">
+        <span class="name">Quality</span>
+        <span class="value"><select id="s-quality">
+          <option value="auto" ${settings.quality === "auto" ? "selected" : ""}>Auto${autoTier ? ` (${autoTier})` : ""}</option>
+          <option value="low" ${settings.quality === "low" ? "selected" : ""}>Low</option>
+          <option value="high" ${settings.quality === "high" ? "selected" : ""}>High</option>
+        </select></span>
+        <span class="desc">Low renders at a lower resolution that adapts to hold 60 fps.
+          <button type="button" id="s-quality-apply" class="apply" hidden>Apply and reload</button></span>
+      </label>
       ${rows}
       <label class="setting">
         <span class="name">Reduced motion</span>
@@ -129,6 +147,19 @@ export function mountSettings(
     saveSettings(settings);
     onChange(settings);
   };
+  const quality = root.querySelector<HTMLSelectElement>("#s-quality");
+  // A change only takes effect on reload (MSAA is per context), so it waits for Apply:
+  // arrow keys on a closed select fire "change" on every step.
+  const apply = root.querySelector<HTMLButtonElement>("#s-quality-apply");
+  quality?.addEventListener("change", () => {
+    if (apply) apply.hidden = quality.value === settings.quality;
+  });
+  apply?.addEventListener("click", () => {
+    const v = quality?.value;
+    settings.quality = v === "low" || v === "high" ? v : "auto";
+    saveSettings(settings);
+    window.location.reload();
+  });
   for (const { input } of inputs) input?.addEventListener("input", emit);
   rm?.addEventListener("change", emit);
 }

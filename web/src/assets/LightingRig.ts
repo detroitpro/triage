@@ -160,7 +160,11 @@ export function configureRenderer(renderer: THREE.WebGLRenderer, biome: Biome): 
   return true;
 }
 
-export function buildLightingRig(biome: Biome, bounds: Bounds): LightingRig {
+export function buildLightingRig(
+  biome: Biome,
+  bounds: Bounds,
+  shadowMapSize = SHADOW_MAP_SIZE,
+): LightingRig {
   const kind = biomeKind(biome);
   const group = new THREE.Group();
   group.name = "lighting";
@@ -188,7 +192,7 @@ export function buildLightingRig(biome: Biome, bounds: Bounds): LightingRig {
           : "#ffe6c4";
   const key = new THREE.DirectionalLight(keyColor, dark ? 0.35 : biome.sun * 0.9);
   key.castShadow = true;
-  key.shadow.mapSize.set(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
+  key.shadow.mapSize.set(shadowMapSize, shadowMapSize);
   const cam = key.shadow.camera;
   cam.near = 1;
   cam.far = 90;

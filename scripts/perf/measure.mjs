@@ -121,6 +121,7 @@ async function sample(areaId, variant) {
         meshes,
         points,
         buildMs: buildMs === null ? undefined : +buildMs.toFixed(0),
+        quality: T.quality?.(),
       };
     },
     { areaId, variant, seconds: SECONDS },

@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { POST } from "../../../src/world/post.ts";
 import type { Biome } from "../../../src/world/types.ts";
 import {
   cobbles,
@@ -83,21 +84,25 @@ export const WIND = { value: 0 };
  * each instance's position so neighbours do not move in step. Never used on collidable or
  * interactable geometry.
  */
-function windy(m: THREE.MeshStandardMaterial): THREE.MeshStandardMaterial {
+function windy(m: THREE.MeshStandardMaterial, strength: number): THREE.MeshStandardMaterial {
+  const amount = { value: strength };
   m.onBeforeCompile = (shader) => {
     shader.uniforms.uWind = WIND;
-    shader.vertexShader = `uniform float uWind;\n${shader.vertexShader}`.replace(
-      "#include <begin_vertex>",
-      `#include <begin_vertex>
+    shader.uniforms.uWindAmount = amount;
+    shader.vertexShader =
+      `uniform float uWind;\nuniform float uWindAmount;\n${shader.vertexShader}`.replace(
+        "#include <begin_vertex>",
+        `#include <begin_vertex>
       #ifdef USE_INSTANCING
         float windPhase = instanceMatrix[3].x * 0.31 + instanceMatrix[3].z * 0.17;
       #else
         float windPhase = 0.0;
       #endif
-      float windLift = 0.35 + max(position.y, 0.0);
-      transformed.x += sin(uWind * 1.4 + windPhase) * 0.035 * windLift;
-      transformed.z += cos(uWind * 1.1 + windPhase * 1.3) * 0.025 * windLift;`,
-    );
+      // Bend from the root: nothing at y = 0 moves, so stems and blades stay planted.
+      float windLift = max(position.y, 0.0) * uWindAmount;
+      transformed.x += sin(uWind * 1.4 + windPhase) * 0.045 * windLift;
+      transformed.z += cos(uWind * 1.1 + windPhase * 1.3) * 0.03 * windLift;`,
+      );
   };
   m.customProgramCacheKey = () => "wind";
   return m;
@@ -161,9 +166,12 @@ export function getMaterialLibrary(biome: Biome): MaterialLibrary {
       map: kind === "industrial" ? steelPlate() : null,
     }),
   );
-  set("foliage", windy(standard(shift(ground, 0.015, 0.05, 0.05), { roughness: 0.75 })));
-  set("foliageDark", windy(standard(shift(ground, -0.01, 0.0, -0.14), { roughness: 0.8 })));
-  set("foliageLight", windy(standard(shift(ground, 0.03, 0.05, 0.14), { roughness: 0.7 })));
+  // Foliage follows the ground palette, except where the ground is paving (the hub plaza).
+  const leaf = kind === "plaza" ? col("#6aa84f") : ground;
+  const wind = (biome.post ?? POST[kind] ?? POST.meadow).wind;
+  set("foliage", windy(standard(shift(leaf, 0.015, 0.05, 0.05), { roughness: 0.75 }), wind));
+  set("foliageDark", windy(standard(shift(leaf, -0.01, 0.0, -0.14), { roughness: 0.8 }), wind));
+  set("foliageLight", windy(standard(shift(leaf, 0.03, 0.05, 0.14), { roughness: 0.7 }), wind));
   set("bark", standard(mix(col("#5b3d22"), p.ground, 0.15), { roughness: 0.95 }));
 
   set("bodyPrimary", standard(npc, { roughness: 0.75 }));

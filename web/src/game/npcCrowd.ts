@@ -209,13 +209,8 @@ const crowdMaterials = new WeakMap<MaterialLibrary, THREE.MeshStandardMaterial>(
 function crowdMaterial(lib: MaterialLibrary): THREE.MeshStandardMaterial {
   let m = crowdMaterials.get(lib);
   if (!m) {
-    // Flat shading like the authored NPC materials, so the near/far switch does not pop.
-    m = new THREE.MeshStandardMaterial({
-      vertexColors: true,
-      roughness: 0.8,
-      metalness: 0,
-      flatShading: true,
-    });
+    // Smooth shading like the authored NPC materials, so the near/far switch does not pop.
+    m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, metalness: 0 });
     m.userData.shared = true;
     crowdMaterials.set(lib, m);
   }

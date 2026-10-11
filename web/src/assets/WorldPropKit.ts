@@ -164,7 +164,7 @@ export const FAMILIES: Record<string, FamilyFactory> = {
   // Rounded, clustered canopy (stylized broadleaf), shadowed underside to sunlit crown.
   tree: () => [
     {
-      geometry: geo("tree.trunk", () => cyl(0.18, 0.34, 2.2, 10).translate(0, 0, 0)),
+      geometry: geo("tree.trunk", () => cyl(0.18, 0.34, 2.2, 10)),
       role: "bark",
       y: 1.1,
     },
@@ -482,14 +482,18 @@ export const FAMILIES: Record<string, FamilyFactory> = {
   ],
   farTree: () => [
     {
-      geometry: geo("farTree", () =>
+      geometry: geo("farTree.canopy", () =>
         merged([
           blob(1.9, 5, 0.8).translate(0, 3.0, 0),
           blob(1.3, 19, 0.85).translate(0.6, 4.1, 0.3),
-          cyl(0.22, 0.34, 2.0, 6).translate(0, 1.0, 0),
         ]),
       ),
       role: "foliageDark",
+      y: 0,
+    },
+    {
+      geometry: geo("farTree.trunk", () => cyl(0.22, 0.34, 2.2, 6).translate(0, 1.1, 0)),
+      role: "bark",
       y: 0,
     },
   ],

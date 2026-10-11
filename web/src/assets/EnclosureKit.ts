@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { POST } from "../../../src/world/post.ts";
 import type { Bounds } from "../pure/collision.ts";
 import { mulberry32 } from "../pure/rng.ts";
 import { KEY_DIR } from "./LightingRig.ts";
@@ -153,21 +154,17 @@ function hills(b: Bounds, lib: MaterialLibrary, seed: number): THREE.Mesh {
   return mesh;
 }
 
+/** Far trees keep this far from far houses (houses are ~6 m wide, canopies ~4 m). */
+const FAR_HOUSE_CLEAR = 7.5;
+
 function farLayer(b: Bounds, lib: MaterialLibrary, seed: number): THREE.Object3D[] {
   const rand = mulberry32(seed ^ 0x5151);
   const cx = b.x + b.w / 2;
   const cz = b.z + b.d / 2;
   const trees: THREE.Matrix4[] = [];
   const houses: THREE.Matrix4[] = [];
-  const treeCount = lib.kind === "plaza" ? 40 : 90;
-  for (let i = 0; i < treeCount; i++) {
-    const ang = rand() * Math.PI * 2;
-    const r = 8 + rand() * 50;
-    const x = cx + Math.cos(ang) * (b.w / 2 + r);
-    const z = cz + Math.sin(ang) * (b.d / 2 + r);
-    const y = heightOutside(x, z, b, seed) - 0.3;
-    trees.push(matrixAt(x, y, z, rand() * 6.28, 0.8 + rand() * 0.9));
-  }
+  // Houses first; trees keep clear of them (rounded canopies are wide and would clip walls).
+  const housePts: [number, number][] = [];
   const houseCount = lib.kind === "plaza" ? 10 : 4;
   for (let i = 0; i < houseCount; i++) {
     const ang = (i / houseCount) * Math.PI * 2 + rand() * 0.4;
@@ -176,6 +173,19 @@ function farLayer(b: Bounds, lib: MaterialLibrary, seed: number): THREE.Object3D
     const z = cz + Math.sin(ang) * (b.d / 2 + r);
     const y = heightOutside(x, z, b, seed) - 0.2;
     houses.push(matrixAt(x, y, z, ang + Math.PI / 2 + (rand() - 0.5), 0.9 + rand() * 0.5));
+    housePts.push([x, z]);
+  }
+  const treeCount = lib.kind === "plaza" ? 40 : 90;
+  for (let i = 0; i < treeCount; i++) {
+    const ang = rand() * Math.PI * 2;
+    const r = 8 + rand() * 50;
+    const x = cx + Math.cos(ang) * (b.w / 2 + r);
+    const z = cz + Math.sin(ang) * (b.d / 2 + r);
+    const scale = 0.8 + rand() * 0.9;
+    const spin = rand() * 6.28;
+    if (housePts.some(([hx, hz]) => Math.hypot(x - hx, z - hz) < FAR_HOUSE_CLEAR)) continue;
+    const y = heightOutside(x, z, b, seed) - 0.3;
+    trees.push(matrixAt(x, y, z, spin, scale));
   }
   const out: THREE.Object3D[] = [];
   for (const part of FAMILIES.farTree?.(lib.kind) ?? [])
@@ -187,7 +197,6 @@ function farLayer(b: Bounds, lib: MaterialLibrary, seed: number): THREE.Object3D
   return out;
 }
 
-/** Gradient sky dome: horizon takes the fog colour, zenith the biome sky colour deepened. */
 /**
  * Stylized sky: zenith-to-horizon gradient from the biome, a sun disc and halo in the key
  * light's direction (HDR, so it blooms), and soft drifting cloud bands. One draw call.
@@ -204,6 +213,7 @@ function skyDome(b: Bounds, lib: MaterialLibrary): THREE.Mesh {
       uHorizon: { value: horizon },
       uSun: { value: new THREE.Color("#fff1d2").multiplyScalar(lib.biome.sun) },
       uSunDir: { value: KEY_DIR.clone() },
+      uClouds: { value: (lib.biome.post ?? POST[lib.kind] ?? POST.meadow).clouds },
       uTime: WIND,
     },
     vertexShader: `varying vec3 vDir;
@@ -212,7 +222,7 @@ function skyDome(b: Bounds, lib: MaterialLibrary): THREE.Mesh {
         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
       }`,
     fragmentShader: `uniform vec3 uTop, uHorizon, uSun, uSunDir;
-      uniform float uTime;
+      uniform float uTime, uClouds;
       varying vec3 vDir;
       float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
       float noise(vec2 p) {
@@ -227,7 +237,7 @@ function skyDome(b: Bounds, lib: MaterialLibrary): THREE.Mesh {
         // Clouds: two noise octaves projected on a dome, fading toward the horizon.
         vec2 uv = d.xz / max(d.y + 0.25, 0.05) * 1.6 + vec2(uTime * 0.01, 0.0);
         float c = noise(uv) * 0.65 + noise(uv * 2.3 + 7.0) * 0.35;
-        c = smoothstep(0.55, 0.8, c) * smoothstep(0.02, 0.25, d.y);
+        c = smoothstep(0.85 - uClouds * 0.4, 0.95 - uClouds * 0.25, c) * smoothstep(0.02, 0.25, d.y);
         col = mix(col, mix(uHorizon, vec3(1.0), 0.7), c * 0.6);
         float s = max(dot(d, normalize(uSunDir)), 0.0);
         col += uSun * (pow(s, 900.0) * 6.0 + pow(s, 12.0) * 0.25);

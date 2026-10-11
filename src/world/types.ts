@@ -48,6 +48,10 @@ export interface BiomePost {
   vignette: number;
   /** Image-based light from a neutral studio environment, 0..1; lets PBR read. */
   environment: number;
+  /** Foliage sway, 0 = still (indoors) .. 2 = gusty. */
+  wind: number;
+  /** Cloud cover on the sky dome, 0..1 (open biomes only). */
+  clouds: number;
 }
 
 export interface Dimensions {

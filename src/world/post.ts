@@ -13,6 +13,8 @@ export const POST = {
     warmth: 0.12,
     vignette: 0.25,
     environment: 0.22,
+    wind: 1.0,
+    clouds: 0.55,
   },
   plaza: {
     bloom: 0.35,
@@ -22,6 +24,8 @@ export const POST = {
     warmth: 0.1,
     vignette: 0.25,
     environment: 0.22,
+    wind: 0.7,
+    clouds: 0.45,
   },
   village: {
     bloom: 0.45,
@@ -31,6 +35,8 @@ export const POST = {
     warmth: 0.18,
     vignette: 0.35,
     environment: 0.18,
+    wind: 0.6,
+    clouds: 0.3,
   },
   industrial: {
     bloom: 0.55,
@@ -40,6 +46,8 @@ export const POST = {
     warmth: -0.08,
     vignette: 0.4,
     environment: 0.12,
+    wind: 0.0,
+    clouds: 0.0,
   },
   dungeon: {
     bloom: 0.7,
@@ -49,6 +57,8 @@ export const POST = {
     warmth: -0.05,
     vignette: 0.55,
     environment: 0.04,
+    wind: 0.0,
+    clouds: 0.0,
   },
 } as const satisfies Record<string, BiomePost>;
 
@@ -61,5 +71,7 @@ export function postProblems(p: BiomePost): string[] {
   if (p.warmth < -1 || p.warmth > 1) out.push(`warmth ${p.warmth} outside -1..1`);
   if (p.vignette < 0 || p.vignette > 1) out.push(`vignette ${p.vignette} outside 0..1`);
   if (p.saturation < 0 || p.contrast <= 0) out.push("saturation or contrast out of range");
+  if (p.wind < 0 || p.wind > 2) out.push(`wind ${p.wind} outside 0..2`);
+  if (p.clouds < 0 || p.clouds > 1) out.push(`clouds ${p.clouds} outside 0..1`);
   return out;
 }

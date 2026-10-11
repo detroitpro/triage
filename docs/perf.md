@@ -92,14 +92,38 @@ across the tour. The dense security areas are bound by NPC draw calls (step 4).
 
 ### What players see (vsync on)
 
-Median of 3 passes; the low tier holds frame time with dynamic resolution, so the scale it
-settled at is part of the result.
+Median of 3 passes with no other GPU load; the low tier holds frame time with dynamic
+resolution, so the scale it settled at is part of the result. Earlier step-3 numbers taken
+while a playtest shared the GPU were 10–15% low and are replaced here.
 
 | Step | feature hub | feature, largest (100) | feature, smallest (10) | security, 256 | security, 224 |
 |------|----:|----:|----:|----:|----:|
 | baseline | 26 | 25 | 47 | 22 | 24 |
-| 3. quality tiers, dynamic resolution (low tier: no MSAA, 1024 shadows) | 60 @ 0.75 | 54 @ 0.6 | 60 @ 0.9 | 40 @ 0.6 | 45 @ 0.6 |
+| 3. quality tiers, dynamic resolution (low tier: no MSAA, 1024 shadows) | 60 @ 0.8 | 57 @ 0.65 | 60 @ 0.9 | 49 @ 0.6 | 54 @ 0.6 |
+| 4. far NPCs as an instanced crowd, labels past 28 m hidden | 60 @ 0.8 | 57 @ 0.6 | 60 @ 0.9 | 45 @ 0.6 | 48 @ 0.6 |
 
-`@` is the dynamic resolution scale. The dense areas sit at the 0.6 floor: they are bound
-by NPC draw calls, not pixels (step 4).
+`@` is the dynamic resolution scale. Step 4 cuts draw calls in the densest area from ~6,600
+to ~250, and at a fixed scale hiding every NPC now moves fps only 67 → 70, so NPCs no longer
+cost the GPU; the step 3 → 4 differences above are within run-to-run noise. On this GPU
+the dense areas are bound by the environment: fill (half resolution: 67 → 88 fps at a fixed
+scale) and shadow-map sampling on every receiving pixel (no shadows: 67 → 97).
 
+## M7 gate (2026-10-11, all five steps)
+
+Every area, 500-issue worlds and the real 49-issue world, vsync on, median of 3, low tier.
+
+| World | Areas | fps | Worst frame | Region load |
+|-------|------:|-----|-------------|-------------|
+| real, 49 issues (feature lens) | 16 | 55–60 | ≤ 50 ms | ≤ 17 ms |
+| 500 issues, feature lens | 16 | 55–60 | ≤ 67 ms (4 areas over 50) | ≤ 28 ms |
+| 500 issues, security lens: hub, high-security | 2 | 58–60 | ≤ 33 ms | ≤ 11 ms |
+| 500 issues, security lens: 224 and 256 NPCs | 2 | 47, 43 | 50, 83 ms | 59, 113 ms |
+
+**Status: not met in full.** Met: region load under 250 ms everywhere, no shader compiles
+after the first visit, 55–60 fps in every area up to 100 NPCs. Not met: the two areas with
+224–256 NPCs (43–47 fps at the 0.6 resolution floor), and a few worst frames between 50 and
+83 ms. Next levers, by measured payoff: cheaper shadow filtering on the low tier (shadow
+sampling is ~30% of a dense frame), spatial chunks for scattered props so off-screen ones
+are culled (373k triangles in the densest area, all from the environment), and a lower
+resolution floor on the low tier. A 250-NPC region is also a layout question: the
+pipeline could split regions that large.

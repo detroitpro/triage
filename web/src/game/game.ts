@@ -55,6 +55,8 @@ export interface TriageDebug {
   world: World;
   /** Resolved quality tier and the current dynamic resolution scale. */
   quality(): { tier: Tier; scale: number; pixelRatio: number };
+  /** Pin the dynamic resolution scale (for measurements), or pass null to let it adapt. */
+  freezeResolution(scale: number | null): void;
 }
 
 /** The unmasked GPU name, when the browser exposes it; used only to pick the "auto" tier. */
@@ -87,6 +89,7 @@ export class Game {
   private profile: QualityProfile;
   private dynres: DynamicResolution;
   private lastFrameAt = 0;
+  private frozenScale: number | null = null;
   private built: BuiltArea | null = null;
   private armedDoors = new Set<string>();
   private edgeLines = new THREE.Group();
@@ -266,7 +269,7 @@ export class Game {
 
   private frame(): void {
     const now = performance.now();
-    if (this.lastFrameAt && this.dynres.update(now - this.lastFrameAt))
+    if (this.frozenScale === null && this.lastFrameAt && this.dynres.update(now - this.lastFrameAt))
       this.renderer.setPixelRatio(this.basePixelRatio() * this.dynres.scale);
     this.lastFrameAt = now;
     const dt = Math.min(0.05, this.clock.getDelta());
@@ -274,7 +277,8 @@ export class Game {
     this.player.update(dt);
     const built = this.built;
     if (!built) return;
-    for (const n of built.npcs.values()) animateNpc(n, t, this.settings.reducedMotion);
+    for (const n of built.npcs.values())
+      if (built.crowd.isNear(n.placement.issue)) animateNpc(n, t, this.settings.reducedMotion);
     for (const d of built.doors) animateDoor(d, t);
     const pos = this.player.pos;
     // Doors.
@@ -300,6 +304,8 @@ export class Game {
       this.hud.setPrompt(nearest);
     }
     this.verbs.frame(dt);
+    // After verbs, so walking or shrinking NPCs' far instances track this frame's transform.
+    built.crowd.update(this.player.camera.position);
     this.hud.drawMinimap({
       bounds: built.area.bounds,
       npcs: [...built.npcs.values()].map((n) => ({
@@ -364,6 +370,8 @@ export class Game {
     if (show) {
       this.player.inputBlocked = true;
       this.player.unlock();
+      // Keyboard users land on the first control.
+      o.querySelector<HTMLElement>("select, input, button")?.focus();
     } else this.onOverlayClosed();
   }
 
@@ -691,6 +699,10 @@ export class Game {
       },
       api: this.api,
       world: this.world,
+      freezeResolution: (scale) => {
+        this.frozenScale = scale;
+        this.renderer.setPixelRatio(this.basePixelRatio() * (scale ?? this.dynres.scale));
+      },
       quality: () => ({
         tier: this.profile.tier,
         scale: this.dynres.scale,

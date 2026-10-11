@@ -5,6 +5,8 @@ decisions (choice / score / noul); **OpenRouter** is used only where generated
 text is needed. Code stays in control and routes on answers + confidence.
 
 Plan and open decisions: [docs/PLAN.md](docs/PLAN.md).
+Product charter (the issue world: classification → graph → first-person client): [docs/CHARTER.md](docs/CHARTER.md).
+Review agents in `.claude/agents/`: `charter-check`, `qa-reviewer`, `graph-auditor`, `playtester`, `writeback-safety`.
 
 ## Stack
 
@@ -19,23 +21,36 @@ make secrets-unlock   # .env from Infisical (skill: infisical-secrets)
 make setup            # npm ci
 make check            # lint + typecheck + test (what CI runs)
 make smoke            # live call to OpenRouter and Jev
-npm run triage -- classify item.json [--draft]
+npm run triage -- run              # ingest → interrogate → classify → relate → build (data/)
+npm run triage -- <stage>          # one stage; `validate` checks graph + world invariants
+npm run dev -w web                 # three.js client on http://localhost:5173 (serves data/world/*)
+npm run server                     # local API for the client: practice mode (nothing reaches GitHub)
+npm run server -- --live           # confirmed in-game actions reach GitHub; audited in data/audit.jsonl
 ```
 
 ## Layout
 
 | Path | Purpose |
 |------|---------|
-| `src/questions.ts` | **Every** Jev question and threshold. The review surface — edit wording and numbers here only |
-| `src/jev.ts` | One batched `systemOne` call per item |
-| `src/route.ts` | Answers → route (`queue` / `needs-info` / `human` / `close`) |
-| `src/llm.ts` | OpenRouter chat; `OPENROUTER_MODEL` overrides the default `openrouter/auto` |
-| `src/cli.ts` | `triage classify` |
+| `src/questions.ts` | **Every** Jev question and threshold (issue, pair, intent). The review surface |
+| `src/systemone.ts` | `SystemOne` interface: real Jev client, or an OpenRouter stand-in when `TYPESAFE_API_KEY` is absent |
+| `src/ingest/` | GitHub issues → `data/issues.json` |
+| `src/interrogate/` | Local clone → candidate functional and code areas (`data/areas.json`) |
+| `src/classify/` | One batched call per issue → `data/classified.json` |
+| `src/graph/` | Explicit + inferred edges, candidate pruning, analytics, lenses → `data/graph.json` |
+| `src/world/` | `biome.ts` (second review surface), `build.ts` (layout), `types.ts` (world.json contract) |
+| `src/cli.ts` | `triage ingest | interrogate | classify | relate | build | validate | run` |
+| `src/writeback/gate.ts` | The one gate for GitHub mutations: dry-run default, audit, undo, idempotency |
+| `src/server/` | Local HTTP API (`docs/api.md`): status, action, undo, dialogue; keys never reach the browser |
+| `web/` | Vite + three.js first-person client (npm workspace); proxies `/api` to the server |
 | `scripts/smoke.ts` | Live round trip; `SKIP` means a key is missing |
 
 ## Rules
 
 1. This repo is **public**. Never commit `.env`, keys, LAN addresses, or real customer data.
 2. Tests must not touch the network: inject fakes (`JevClient`, `fetch` option).
-3. Use the `typesafe-ai` skill before writing or changing Jev questions. Do not invent request or response fields — check `node_modules/@typesafe-ai/sdk/dist/index.d.mts`.
+3. Use the `typesafe-ai` and `building-with-typesafe-jev` skills before writing or changing Jev questions; the charter section "How we ask Jev" is the house summary. Do not invent request or response fields — check `node_modules/@typesafe-ai/sdk/dist/index.d.mts`.
 4. Run `make check` before committing.
+5. Pipeline outputs live under `data/` (gitignored). Never commit them.
+6. Before a PR: run `charter-check` and `qa-reviewer`; `graph-auditor` for data-model changes, `playtester` for `web/`, `writeback-safety` for anything that can mutate GitHub.
+7. Any work under `web/` goes through the `threejs-*` skills (`.agents/skills/`): `threejs-game-director` to scope, `threejs-gameplay-systems` for controls/camera/feel, `threejs-aaa-graphics-builder` for visuals (score with its 10-category scorecard), `threejs-game-ui-designer` for HUD and menus, `threejs-debug-profiler` for bugs and budgets, `threejs-qa-release` for evidence (`scripts/inspect-threejs-canvas.mjs`). Art direction stays procedural low poly (charter); the generator skills need `TRIPO_API_KEY`, `GEMINI_API_KEY`, or `ELEVENLABS_API_KEY` and are opt-in.

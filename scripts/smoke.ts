@@ -2,9 +2,8 @@
 // Dev-ready requires no SKIP lines.
 import { TypeSafeClient } from "@typesafe-ai/sdk";
 import { loadDotEnv } from "../src/env.ts";
-import { assess } from "../src/jev.ts";
 import { chat } from "../src/llm.ts";
-import { decide } from "../src/route.ts";
+import { issueQuestions } from "../src/questions.ts";
 
 loadDotEnv();
 let failed = false;
@@ -30,14 +29,14 @@ await check("openrouter", "OPENROUTER_API_KEY", async () => {
 });
 
 await check("jev", "TYPESAFE_API_KEY", async () => {
-  const d = decide(
-    await assess(new TypeSafeClient(), {
-      source: "smoke",
+  const { answers, model } = await new TypeSafeClient().systemOne({
+    state: {
       title: "Checkout returns 500",
-      body: "Since this morning every checkout returns HTTP 500. Customers cannot pay.",
-    }),
-  );
-  return `route=${d.route} kind=${d.kind} urgency=${d.urgency}`;
+      untrusted: { body: "Every checkout returns HTTP 500." },
+    },
+    questions: { kind: issueQuestions([], []).kind },
+  });
+  return `model=${model} kind=${answers.kind.choice} (${answers.kind.confidence})`;
 });
 
 process.exit(failed ? 1 : 0);

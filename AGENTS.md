@@ -45,6 +45,7 @@ npm run server -- --live           # confirmed in-game actions reach GitHub; aud
 | `web/` | Vite + three.js first-person client (npm workspace); proxies `/api` to the server |
 | `scripts/smoke.ts` | Live round trip; `SKIP` means a key is missing |
 | `scripts/perf/` | Frame-time harness and scaled test worlds; numbers in `docs/perf.md` |
+| `scripts/assets/` | Meshy character pipeline (`characters.ts` prompts are the review surface) and `pack.ts` |
 
 ## Rules
 
@@ -54,4 +55,4 @@ npm run server -- --live           # confirmed in-game actions reach GitHub; aud
 4. Run `make check` before committing.
 5. Pipeline outputs live under `data/` (gitignored). Never commit them.
 6. Before a PR: run `charter-check` and `qa-reviewer`; `graph-auditor` for data-model changes, `playtester` for `web/`, `writeback-safety` for anything that can mutate GitHub.
-7. Any work under `web/` goes through the `threejs-*` skills (`.agents/skills/`): `threejs-game-director` to scope, `threejs-gameplay-systems` for controls/camera/feel, `threejs-aaa-graphics-builder` for visuals (score with its 10-category scorecard), `threejs-game-ui-designer` for HUD and menus, `threejs-debug-profiler` for bugs and budgets, `threejs-qa-release` for evidence (`scripts/inspect-threejs-canvas.mjs`). The look bar, asset rules, and frame budget are in the charter ("Look"); measure with `scripts/perf/` (`docs/perf.md`). The generator skills need `TRIPO_API_KEY`, `GEMINI_API_KEY`, or `ELEVENLABS_API_KEY`; generated assets are checked in with a manifest so playing never needs a key.
+7. Any work under `web/` goes through the `threejs-*` skills (`.agents/skills/`): `threejs-game-director` to scope, `threejs-gameplay-systems` for controls/camera/feel, `threejs-aaa-graphics-builder` for visuals (score with its 10-category scorecard), `threejs-game-ui-designer` for HUD and menus, `threejs-debug-profiler` for bugs and budgets, `threejs-qa-release` for evidence (`scripts/inspect-threejs-canvas.mjs`). The look bar, asset rules, and frame budget are in the charter ("Look"); measure with `scripts/perf/` (`docs/perf.md`). Characters are generated with Meshy (`MESHY_API_KEY`): `npx tsx scripts/assets/character.ts <form> [--stop-after concept|model|rig|animate]` (resumable; raw output in `asset-work/`), then `npx tsx scripts/assets/pack.ts <form>` into `web/public/assets` + manifest. Inspect the concept before spending on 3D. Generated assets are checked in so playing never needs a key.

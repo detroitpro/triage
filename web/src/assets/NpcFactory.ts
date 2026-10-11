@@ -401,41 +401,101 @@ function generatedBody(
   root.add(body);
   body.add(character.root);
   const h = template.height;
-  const front = -template.frontZ;
-  // The reviewed signal floats above the head, where every form keeps it readable.
+  // The reviewed signal floats above the head, small: a status gem, not a prop.
   const signal = mesh(
-    "signal.gem",
-    () => new THREE.OctahedronGeometry(0.1),
+    "signal.gem.small",
+    () => new THREE.OctahedronGeometry(0.055),
     "decalDark",
     lib,
     0,
-    h + 0.18,
+    h + 0.16,
     0,
   );
   signal.name = "signal";
   body.add(signal);
+  // Badges ride the chest bone so they move with the animation, flush with the front surface
+  // and smaller than on the chunky authored forms. No hat ribbon or tabard: they would clip
+  // a sculpted outfit.
+  const chest = chestAnchor(character.root, template, template.chest, BADGE_SCALE_GENERATED);
+  body.position.y = template.asset.hover ?? 0;
   const badgeRig: BadgeRig = {
-    chest: [0, h * 0.6, front - 0.02],
+    chest: [0, 0, -0.012],
     cols: 3,
-    band: { y: h * 0.94, r: Math.max(0.12, template.headRadius), h: 0.07 },
-    tabard: [0, h * 0.46, front - 0.01, 0.42, 0.22, 0.03],
+    band: { y: 0, r: 0, h: 0 },
+    tabard: [0, 0, 0, 0, 0, 0],
+    minimal: true,
   };
   return {
     root,
-    joints: { body },
+    joints: { body: chest, bodyJoint: body },
     signal,
     labelHeight: h + 0.55,
-    floats: form === "shade",
+    floats: (template.asset.hover ?? 0) > 0,
     form,
     character,
     badgeRig,
   };
 }
 
+/** An anchor on the bone nearest the chest, at the chest's front surface, facing -Z. */
+function chestAnchor(
+  character: THREE.Object3D,
+  _template: CharacterTemplate,
+  point: [number, number, number],
+  scale: number,
+): THREE.Object3D {
+  character.updateMatrixWorld(true);
+  // The character is turned to face -Z and scaled; the point is in scaled model space.
+  const [, y, z] = point;
+  const target = new THREE.Vector3(0, y, -z);
+  const parentInverse = new THREE.Matrix4();
+  if (character.parent) parentInverse.copy(character.parent.matrixWorld).invert();
+  let best: THREE.Bone | null = null;
+  let bestDy = Number.POSITIVE_INFINITY;
+  const p = new THREE.Vector3();
+  character.traverse((o) => {
+    if (!(o instanceof THREE.Bone)) return;
+    p.setFromMatrixPosition(o.matrixWorld).applyMatrix4(parentInverse);
+    // Only the spine/neck/head chain: arm bones share heights with the chest and face.
+    if (Math.abs(p.x) > 0.12) return;
+    const dy = Math.abs(p.y - y);
+    if (dy < bestDy) {
+      bestDy = dy;
+      best = o;
+    }
+  });
+  const anchor = new THREE.Object3D();
+  anchor.name = "chestAnchor";
+  const bone = best as THREE.Bone | null;
+  if (!bone) {
+    anchor.position.copy(target);
+    character.parent?.add(anchor);
+    anchor.scale.setScalar(scale);
+    return anchor;
+  }
+  bone.add(anchor);
+  // Place and orient the anchor in the body's space, then express that under the bone.
+  const world = new THREE.Matrix4().compose(
+    target,
+    new THREE.Quaternion(),
+    new THREE.Vector3().setScalar(scale),
+  );
+  if (character.parent) world.premultiply(character.parent.matrixWorld);
+  const local = new THREE.Matrix4().copy(bone.matrixWorld).invert().multiply(world);
+  local.decompose(anchor.position, anchor.quaternion, anchor.scale);
+  return anchor;
+}
+
+const BADGE_SCALE_GENERATED = 0.55;
+
 /** Idle motion per form; `t` is seconds, `phase` 0..1 per NPC. */
 export function animateNpcBody(body: NpcBody, form: NpcForm, t: number, phase: number): void {
   if (body.character) {
     body.character.update(t);
+    // Floating generated forms bob around their hover height.
+    const hover = body.character.hover;
+    if (hover > 0 && body.joints.bodyJoint)
+      body.joints.bodyJoint.position.y = hover + Math.sin(t * 1.6 + phase * 6.28) * 0.06;
     return;
   }
   const j = body.joints;
@@ -488,6 +548,8 @@ interface BadgeRig {
   band: { y: number; r: number; h: number };
   /** Tabard panel or collar in body space: [x, y, z, w, h, d]. */
   tabard: [number, number, number, number, number, number];
+  /** Generated characters: chest badges only, no ribbon or tabard. */
+  minimal?: boolean;
 }
 
 const RIGS: Record<NpcForm, BadgeRig> = {
@@ -645,7 +707,7 @@ export function setBadges(
   // Context label: ribbon on the hat and a tinted tabard.
   const ctx = contextLabel([...labels, ...ghostLabels]);
   const head = body.joints.head;
-  if (ctx) {
+  if (ctx && !rig.minimal) {
     const ghost = !labels.includes(ctx);
     const color = labelColor(labelSet, ctx);
     const mat = badgeMaterial(color, ghost);

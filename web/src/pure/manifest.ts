@@ -34,6 +34,10 @@ export interface CharacterAsset {
   height: number;
   /** Clip name in the GLB for each role; "idle" is required. */
   clips: { idle: string; talk?: string; react?: string; leave?: string };
+  /** Self-illumination 0..1 (dark-cloaked forms stay readable in dark biomes). */
+  selfLight?: number;
+  /** Hover height in metres; the body bobs around it (floating forms). */
+  hover?: number;
   provenance: AssetProvenance;
 }
 
@@ -76,6 +80,10 @@ export function validateManifest(
       if (!a.clips?.idle) errors.push(`${where}: no idle clip`);
       if (!(a.height > 0.3 && a.height < 6))
         errors.push(`${where}: height ${a.height} out of range`);
+      if (a.selfLight !== undefined && !(a.selfLight >= 0 && a.selfLight <= 1))
+        errors.push(`${where}: selfLight ${a.selfLight} outside 0..1`);
+      if (a.hover !== undefined && !(a.hover >= 0 && a.hover <= 1.5))
+        errors.push(`${where}: hover ${a.hover} outside 0..1.5`);
     }
     const p = a.provenance;
     if (!p?.provider || !p.prompt || !p.generatedAt || !p.license)

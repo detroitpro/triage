@@ -1,4 +1,119 @@
 {
   "version": 1,
-  "assets": []
+  "assets": [
+    {
+      "id": "npc-creature",
+      "kind": "character",
+      "form": "creature",
+      "file": "npc/creature.glb",
+      "bytes": 634652,
+      "triangles": 15636,
+      "height": 1.3,
+      "clips": {
+        "idle": "Idle",
+        "talk": "Talk_with_Hands_Open",
+        "react": "Big_Wave_Hello",
+        "leave": "Formal_Bow"
+      },
+      "provenance": {
+        "provider": "meshy",
+        "taskIds": [
+          "01a12b5a-2a89-7402-9f51-5cd13a9c9758",
+          "01a12b5b-4494-77e0-827d-3b78718779dd",
+          "01a12b5e-3400-719d-beea-ff8a7499777c",
+          "01a12b5e-8300-7028-9562-8233db042d50"
+        ],
+        "prompt": "3D character concept render in the style of a modern stylized battle-royale game (Fortnite-like): slightly exaggerated cartoon proportions, larger head and hands, expressive friendly face, smooth clean shapes, soft studio lighting, hand-painted materials. Full body, front view, standing in A-pose, arms away from the body, legs apart and fully visible, nothing in the hands, plain white background, no base, no text. A small friendly forest critter that stands upright on two legs like a person: round fluffy body, big ears, short tail, mitten-like hands, cream and soft brown fur",
+        "license": "Meshy paid plan: the customer owns the output (Meshy Terms of Use 3.2); library animations licensed as incorporated into the output (3.1)",
+        "terms": "https://www.meshy.ai/terms-of-use",
+        "generatedAt": "2026-10-11"
+      }
+    },
+    {
+      "id": "npc-shade",
+      "kind": "character",
+      "form": "shade",
+      "file": "npc/shade.glb",
+      "bytes": 588428,
+      "triangles": 15546,
+      "height": 1.85,
+      "clips": {
+        "idle": "Idle",
+        "talk": "Talk_with_Hands_Open",
+        "react": "Big_Wave_Hello",
+        "leave": "Formal_Bow"
+      },
+      "selfLight": 0.15,
+      "hover": 0.25,
+      "provenance": {
+        "provider": "meshy",
+        "taskIds": [
+          "01a12b5a-2a85-77b7-ad36-494d16fa3444",
+          "01a12b5b-4494-7310-87d7-8832def842fa",
+          "01a12b5e-11b8-769e-b200-0fd6c98ff433",
+          "01a12b5e-683a-7496-9d0b-2621907ff7ac"
+        ],
+        "prompt": "3D character concept render in the style of a modern stylized battle-royale game (Fortnite-like): slightly exaggerated cartoon proportions, larger head and hands, expressive friendly face, smooth clean shapes, soft studio lighting, hand-painted materials. Full body, front view, standing in A-pose, arms away from the body, legs apart and fully visible, nothing in the hands, plain white background, no base, no text. A hooded dungeon wraith in a short tattered cloak that ends above the knees, thin dark legs and arms clearly visible, glowing eyes under the hood, slate blue and charcoal",
+        "license": "Meshy paid plan: the customer owns the output (Meshy Terms of Use 3.2); library animations licensed as incorporated into the output (3.1)",
+        "terms": "https://www.meshy.ai/terms-of-use",
+        "generatedAt": "2026-10-11"
+      }
+    },
+    {
+      "id": "npc-villager",
+      "kind": "character",
+      "form": "villager",
+      "file": "npc/villager.glb",
+      "bytes": 707252,
+      "triangles": 15570,
+      "height": 1.75,
+      "clips": {
+        "idle": "Idle",
+        "talk": "Talk_with_Hands_Open",
+        "react": "Big_Wave_Hello",
+        "leave": "Formal_Bow"
+      },
+      "provenance": {
+        "provider": "meshy",
+        "taskIds": [
+          "01a12b53-34df-76d0-823b-1bf42c4189f4",
+          "01a12b53-94d2-7517-8cec-e00fc6b5ac09",
+          "01a12b56-b633-7240-b464-4936c5aaa199",
+          "01a12b57-0553-7401-ae5e-61d0337e18ed"
+        ],
+        "prompt": "3D character concept render in the style of a modern stylized battle-royale game (Fortnite-like): slightly exaggerated cartoon proportions, larger head and hands, expressive friendly face, smooth clean shapes, soft studio lighting, hand-painted materials. Full body, front view, standing in A-pose, arms away from the body, legs apart and fully visible, nothing in the hands, plain white background, no base, no text. A village craftsperson: linen shirt with rolled sleeves, short leather apron, soft felt hat, satchel strap across the chest, warm earthy colours",
+        "license": "Meshy paid plan: the customer owns the output (Meshy Terms of Use 3.2); library animations licensed as incorporated into the output (3.1)",
+        "terms": "https://www.meshy.ai/terms-of-use",
+        "generatedAt": "2026-10-11"
+      }
+    },
+    {
+      "id": "npc-worker",
+      "kind": "character",
+      "form": "worker",
+      "file": "npc/worker.glb",
+      "bytes": 736092,
+      "triangles": 15511,
+      "height": 1.8,
+      "clips": {
+        "idle": "Idle",
+        "talk": "Talk_with_Hands_Open",
+        "react": "Big_Wave_Hello",
+        "leave": "Formal_Bow"
+      },
+      "provenance": {
+        "provider": "meshy",
+        "taskIds": [
+          "01a12b5a-2a84-777d-b57b-f334b78f6409",
+          "01a12b5b-4494-718f-ab8d-840abf5e69ee",
+          "01a12b5e-127c-71ab-b498-8ece8b0faf34",
+          "01a12b5e-6986-7076-bb8f-2b55e64320ce"
+        ],
+        "prompt": "3D character concept render in the style of a modern stylized battle-royale game (Fortnite-like): slightly exaggerated cartoon proportions, larger head and hands, expressive friendly face, smooth clean shapes, soft studio lighting, hand-painted materials. Full body, front view, standing in A-pose, arms away from the body, legs apart and fully visible, nothing in the hands, plain white background, no base, no text. An industrial engineer: hard hat, safety visor pushed up, high-visibility orange vest with reflective stripes over a blue work shirt, sturdy boots, tool belt",
+        "license": "Meshy paid plan: the customer owns the output (Meshy Terms of Use 3.2); library animations licensed as incorporated into the output (3.1)",
+        "terms": "https://www.meshy.ai/terms-of-use",
+        "generatedAt": "2026-10-11"
+      }
+    }
+  ]
 }

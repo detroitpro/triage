@@ -21,6 +21,8 @@ export interface CharacterTemplate {
   height: number;
   /** Front of the body (largest +Z of the model, scaled; the body faces -Z once turned). */
   frontZ: number;
+  /** Chest point on the body's front surface, scaled, in model space (model faces +Z). */
+  chest: [number, number, number];
   /** Rough head radius, for the context ribbon. */
   headRadius: number;
 }
@@ -35,6 +37,8 @@ export interface CharacterInstance {
   update(t: number): void;
   /** Stop and release the mixer's cached actions. */
   dispose(): void;
+  /** Hover height in metres (0 for grounded forms). */
+  hover: number;
   height: number;
 }
 
@@ -110,8 +114,15 @@ export function toTemplate(
       o.castShadow = false;
       o.receiveShadow = false;
       o.frustumCulled = false; // skinned bounds lag the animation; NPCs are few up close
-      for (const m of Array.isArray(o.material) ? o.material : [o.material])
+      for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
         m.userData.shared = true;
+        // Self-light: the base colour also feeds emission, faintly (dark forms in dark biomes).
+        const std = m as THREE.MeshStandardMaterial;
+        if (asset.selfLight && std.isMeshStandardMaterial) {
+          std.emissive = new THREE.Color(1, 1, 1).multiplyScalar(asset.selfLight);
+          std.emissiveMap = std.map;
+        }
+      }
       o.geometry.userData.shared = true;
     }
   });
@@ -122,7 +133,16 @@ export function toTemplate(
   }
   const frontZ = box.max.z * scale;
   const headRadius = ((box.max.x - box.min.x) * scale) / 6;
-  return { asset, scene, clips, scale, height: asset.height, frontZ, headRadius };
+  return {
+    asset,
+    scene,
+    clips,
+    scale,
+    height: asset.height,
+    frontZ,
+    headRadius,
+    chest: chestPoint(scene, box, scale),
+  };
 }
 
 export function instantiateCharacter(template: CharacterTemplate, phase = 0): CharacterInstance {
@@ -164,9 +184,41 @@ export function instantiateCharacter(template: CharacterTemplate, phase = 0): Ch
       last = t;
     },
     height: template.height,
+    hover: template.asset.hover ?? 0,
     dispose() {
       mixer.stopAllAction();
       mixer.uncacheRoot(root);
     },
   };
+}
+
+/**
+ * Where the chest's front surface is: the furthest-forward vertex in a band at 58-68% of the
+ * height, near the centre line (arms in A-pose and the hands are excluded by the x limit).
+ */
+function chestPoint(
+  scene: THREE.Object3D,
+  box: THREE.Box3,
+  scale: number,
+  from = 0.58,
+  to = 0.68,
+): [number, number, number] {
+  const height = box.max.y - box.min.y;
+  const lo = box.min.y + height * from;
+  const hi = box.min.y + height * to;
+  const cx = (box.min.x + box.max.x) / 2;
+  const halfWidth = height * 0.09;
+  const v = new THREE.Vector3();
+  let front = Number.NEGATIVE_INFINITY;
+  scene.traverse((o) => {
+    if (!(o instanceof THREE.Mesh)) return;
+    const pos = o.geometry.attributes.position as THREE.BufferAttribute | undefined;
+    if (!pos) return;
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+      if (v.y >= lo && v.y <= hi && Math.abs(v.x - cx) <= halfWidth && v.z > front) front = v.z;
+    }
+  });
+  if (!Number.isFinite(front)) front = box.max.z;
+  return [0, (lo + hi) / 2 - box.min.y, front].map((n) => n * scale) as [number, number, number];
 }

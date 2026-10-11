@@ -265,7 +265,7 @@ function buildFrame(
   brackets.position.y = 1.35;
   const signal = new THREE.Mesh(
     geo("door.lamp", () => new THREE.SphereGeometry(0.16, 10, 8)),
-    lib.get("shadeEye"),
+    lockLampMaterial(),
   );
   signal.position.set(0, 3.95, 0);
   group.add(signal);
@@ -276,10 +276,46 @@ function buildFrame(
     ),
   );
   cage.position.set(0, 3.8, 0);
-  const glow = makeGlowSprite("#ff3b2a", 1.4);
-  glow.position.set(0, 3.95, 0.05);
+  // The lamp must read as "blocked" from either side before the label is legible: a red
+  // glow card on each face of the lintel and a faint red wash over the doorway.
+  const glow = makeGlowSprite(LOCK_RED, 1.4);
+  glow.position.set(0, 4.05, 0.4);
   group.add(glow);
+  const back = makeGlowSprite(LOCK_RED, 1.4);
+  back.position.set(0, 4.05, -0.4);
+  group.add(back);
+  glow.userData.pair = back;
+  for (const z of [0.6, -0.6]) {
+    const wash = makeGlowSprite(LOCK_RED, 3.4);
+    wash.material = lockWashMaterial(wash.material);
+    wash.position.set(0, 2.3, z);
+    group.add(wash);
+  }
   return { signal, glow };
+}
+
+const LOCK_RED = "#ff3b2a";
+let lockLamp: THREE.MeshStandardMaterial | null = null;
+function lockLampMaterial(): THREE.MeshStandardMaterial {
+  if (!lockLamp) {
+    lockLamp = new THREE.MeshStandardMaterial({
+      color: LOCK_RED,
+      emissive: LOCK_RED,
+      emissiveIntensity: 2.2,
+      roughness: 0.4,
+    });
+    lockLamp.userData.shared = true;
+  }
+  return lockLamp;
+}
+let lockWash: THREE.SpriteMaterial | null = null;
+function lockWashMaterial(base: THREE.SpriteMaterial): THREE.SpriteMaterial {
+  if (!lockWash) {
+    lockWash = base.clone();
+    lockWash.opacity = 0.32;
+    lockWash.userData.shared = true;
+  }
+  return lockWash;
 }
 
 export function buildDoor(
@@ -337,6 +373,9 @@ export function animateDoor(h: DoorHandle, t: number): void {
   if (h.signal) {
     const pulse = 0.5 + 0.5 * Math.sin(t * 3.5);
     h.signal.scale.setScalar(0.9 + pulse * 0.25);
-    if (h.glow) h.glow.scale.setScalar(1.0 + pulse * 0.8);
+    if (h.glow) {
+      h.glow.scale.setScalar(1.0 + pulse * 0.8);
+      (h.glow.userData.pair as THREE.Sprite | undefined)?.scale.setScalar(1.0 + pulse * 0.8);
+    }
   }
 }

@@ -171,8 +171,9 @@ export function buildLightingRig(biome: Biome, bounds: Bounds): LightingRig {
 
   const hemi = new THREE.HemisphereLight(
     dark ? sky.clone().offsetHSL(0, 0, 0.1) : sky,
-    ground,
-    dark ? 0.3 : biome.ambient * (biome.enclosure === "open" ? 0.4 : 0.7),
+    // Dungeon floors bounce torchlight: warm from below, cool from above.
+    dark ? ground.clone().lerp(new THREE.Color(PRACTICAL_COLOR.dungeon ?? "#ff8a3c"), 0.5) : ground,
+    dark ? 0.45 : biome.ambient * (biome.enclosure === "open" ? 0.4 : 0.7),
   );
   group.add(hemi);
   lights.push(hemi);
@@ -218,11 +219,14 @@ export function buildLightingRig(biome: Biome, bounds: Bounds): LightingRig {
   group.add(key, key.target);
   lights.push(key);
 
+  // In dungeons the fill is the torchlight: warm, low, and raking across the walls, since
+  // torches are glow cards rather than lights. Elsewhere it is a cool sky fill.
+  const torch = new THREE.Color(PRACTICAL_COLOR.dungeon ?? "#ff8a3c");
   const fill = new THREE.DirectionalLight(
-    sky.clone().offsetHSL(0, 0.05, 0.1),
-    dark ? 0.15 : biome.ambient * 0.15,
+    dark ? torch : sky.clone().offsetHSL(0, 0.05, 0.1),
+    dark ? 0.8 : biome.ambient * 0.15,
   );
-  fill.position.set(-14, 10, 8);
+  fill.position.set(-14, dark ? 3 : 10, 8);
   group.add(fill, fill.target);
   lights.push(fill);
 

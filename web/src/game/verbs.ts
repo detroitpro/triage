@@ -306,7 +306,7 @@ export class Verbs {
   private async commit(entry: HeldAction): Promise<void> {
     const a = entry.action;
     const h = this.host.npc(a.issue);
-    const practiceLikely = this.api.offline || this.api.mode !== "live";
+    const practiceLikely = !this.api.simulateLive && (this.api.offline || this.api.mode !== "live");
     // 1. Visible state now, as a ghost.
     const revert = this.ghostApply(a, h, practiceLikely);
     playSfx(a.type === "close" ? "release" : "snap");

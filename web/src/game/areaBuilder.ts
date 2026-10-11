@@ -15,7 +15,9 @@ import {
   SHADOW_MAP_SIZE,
 } from "../assets/LightingRig.ts";
 import { getMaterialLibrary, type MaterialLibrary } from "../assets/MaterialLibrary.ts";
+import { radialFalloff } from "../assets/ProceduralTextures.ts";
 import { extraFamilies, geo, isSharedGeometry, makeGlowSprite } from "../assets/WorldPropKit.ts";
+import type { Bounds } from "../pure/collision.ts";
 import { hashString } from "../pure/rng.ts";
 import { type PropInstance, scatterProps } from "../pure/scatter.ts";
 import type { Area } from "./areas.ts";
@@ -109,7 +111,6 @@ export function buildArea(
   // and the light count, and with it every shader, stays fixed per biome.
   const flame = lib.kind === "dungeon";
   const candidates = props.filter((p) => p.family === (flame ? "torch" : "lamp"));
-  let poolMaterial: THREE.SpriteMaterial | null = null;
   for (const p of candidates) {
     // The flame sits in front of the bracket, which faces into the room.
     const glow = makeGlowSprite(PRACTICAL_COLOR[lib.kind] ?? "#ffe0a0", flame ? 1.6 : 1.1);
@@ -120,20 +121,11 @@ export function buildArea(
     );
     group.add(glow);
     rig.addPractical(glow, flame ? 1 : 0.15);
-    // Torches get a warm pool on the floor and wall, the bounce a real light would give.
-    // Lamps do not: villages have dozens, and large transparent cards cost fill rate.
-    if (flame) {
-      const pool = makeGlowSprite(PRACTICAL_COLOR.dungeon ?? "#ff8a3c", 5.5);
-      if (!poolMaterial) {
-        poolMaterial = pool.material.clone();
-        poolMaterial.opacity = 0.28;
-        poolMaterial.userData.shared = false;
-      }
-      pool.material = poolMaterial;
-      pool.position.set(p.position[0], 1.2, p.position[2]);
-      group.add(pool);
-    }
   }
+
+  // Torches light the stone around them: one additive decal on the wall and one on the floor
+  // per torch, all one instanced mesh, in place of the pools real lights used to cast.
+  if (flame && candidates.length) group.add(torchPools(candidates, bounds));
 
   // NPCs face the region centre.
   const npcs = new Map<number, NpcHandle>();
@@ -231,4 +223,56 @@ export function disposeArea(built: BuiltArea): void {
     if (obj instanceof THREE.DirectionalLight) obj.shadow.dispose();
   });
   built.group.removeFromParent();
+}
+
+/** Dungeon wall faces sit within this distance inside the bounds (jittered stone blocks). */
+const WALL_FACE = 0.65;
+
+function torchPools(torches: PropInstance[], b: Bounds): THREE.InstancedMesh {
+  const mesh = new THREE.InstancedMesh(
+    geo("torch.pool", () => new THREE.PlaneGeometry(1, 1)),
+    torchPoolMaterial(),
+    torches.length * 2,
+  );
+  mesh.name = "torchPools";
+  mesh.frustumCulled = false;
+  mesh.renderOrder = 1;
+  const m = new THREE.Matrix4();
+  const q = new THREE.Quaternion();
+  const e = new THREE.Euler();
+  const pos = new THREE.Vector3();
+  const size = new THREE.Vector3();
+  torches.forEach((t, i) => {
+    // Torches face into the room; the wall is behind them at the bounds edge.
+    const fx = Math.sin(t.rotation);
+    const fz = Math.cos(t.rotation);
+    const [x, , z] = t.position;
+    const back =
+      fx > 0.5 ? x - b.x : fx < -0.5 ? b.x + b.w - x : fz > 0.5 ? z - b.z : b.z + b.d - z;
+    const wall = Math.max(0, back - WALL_FACE);
+    pos.set(x - fx * wall, 2.2 * t.scale, z - fz * wall);
+    m.compose(pos, q.setFromEuler(e.set(0, t.rotation, 0)), size.set(5, 4.4, 1));
+    mesh.setMatrixAt(i * 2, m);
+    pos.set(x + fx * 0.6, 0.03, z + fz * 0.6);
+    m.compose(pos, q.setFromEuler(e.set(-Math.PI / 2, 0, 0)), size.set(4.4, 4.4, 1));
+    mesh.setMatrixAt(i * 2 + 1, m);
+  });
+  return mesh;
+}
+
+let poolMaterial: THREE.MeshBasicMaterial | null = null;
+function torchPoolMaterial(): THREE.MeshBasicMaterial {
+  if (!poolMaterial) {
+    poolMaterial = new THREE.MeshBasicMaterial({
+      map: radialFalloff(),
+      // Deeper than the flame colour: additive light on stone reads orange, not yellow.
+      color: "#ff6a1a",
+      transparent: true,
+      opacity: 0.6,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    poolMaterial.userData.shared = true;
+  }
+  return poolMaterial;
 }

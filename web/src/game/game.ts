@@ -26,6 +26,8 @@ export interface TriageDebug {
   teleport(regionId: string): void;
   lookAt(issueNumber: number): void;
   setYawPitch(yaw: number, pitch: number): void;
+  /** Stand at (x, z) in the current area facing `yaw`, for QA shots. */
+  standAt(x: number, z: number, yaw: number): void;
   openMap(): void;
   closeMap(): void;
   talk(issueNumber: number): void;
@@ -601,6 +603,7 @@ export class Game {
         this.player.yaw = Math.atan2(-(p[0] - me[0]), -(p[2] - me[2]));
         this.player.pitch = 0;
       },
+      standAt: (x, z, yaw) => this.player.teleport([x, 0, z], yaw),
       setYawPitch: (yaw, pitch) => {
         this.player.yaw = yaw;
         this.player.pitch = pitch;

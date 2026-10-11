@@ -14,12 +14,12 @@ import {
   PRACTICAL_COLOR,
   SHADOW_MAP_SIZE,
 } from "../assets/LightingRig.ts";
-import { getMaterialLibrary, type MaterialLibrary } from "../assets/MaterialLibrary.ts";
+import { getMaterialLibrary, type MaterialLibrary, WIND } from "../assets/MaterialLibrary.ts";
 import { radialFalloff } from "../assets/ProceduralTextures.ts";
 import { extraFamilies, geo, isSharedGeometry, makeGlowSprite } from "../assets/WorldPropKit.ts";
 import type { Bounds } from "../pure/collision.ts";
 import { hashString } from "../pure/rng.ts";
-import { type PropInstance, scatterProps } from "../pure/scatter.ts";
+import { clearOfEntrance, type PropInstance, scatterProps } from "../pure/scatter.ts";
 import type { Area } from "./areas.ts";
 import { buildDoor, type DoorHandle } from "./doors.ts";
 import { makeLabelSprite } from "./labels.ts";
@@ -107,7 +107,13 @@ export function buildArea(
   ]);
   const decalDensity = open ? 0.12 : lib.kind === "village" ? 0.04 : 0.012;
   const decals = scatterLayer(area, extras.decals, decalDensity, 1.2, "decals", avoid);
-  const props = [...main, ...mid, ...decals];
+  // Keep the arrival view open: nothing taller than a decal near the entrance, so the first
+  // frame in a region shows the region, not a tree trunk.
+  const props = [
+    ...clearOfEntrance(main, area.entrance, bounds),
+    ...clearOfEntrance(mid, area.entrance, bounds),
+    ...decals,
+  ];
   group.add(buildProps(props, biome, lib));
 
   // Practicals: torches flicker, lanterns are steady. Each is an emissive prop plus glow
@@ -172,6 +178,8 @@ export function buildArea(
     group.add(banner);
   }
 
+  const sky = group.getObjectByName("sky");
+
   // Per-frame hook on a sentinel that renders first: renderer settings before any program
   // compiles, key light follow, flicker, diagnostics. game.ts never has to call us.
   const start = performance.now();
@@ -200,6 +208,9 @@ export function buildArea(
         });
       }
       rig.update(camera, (performance.now() - start) / 1000);
+      WIND.value = performance.now() / 1000;
+      // The sky dome follows the camera so no region is large enough to reach its edge.
+      sky?.position.set(camera.position.x, 0, camera.position.z);
       installDiagnostics(r, scene, area.id, shadowMapSize);
     });
   };

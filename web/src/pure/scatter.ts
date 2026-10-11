@@ -72,3 +72,20 @@ export function scatterProps(opts: {
   }
   return out;
 }
+
+/** Metres kept free of props around a region's entrance: 7, or less in small rooms. */
+export function entranceClearance(bounds: Bounds): number {
+  return Math.min(7, 0.18 * Math.min(bounds.w, bounds.d));
+}
+
+/** Props outside the entrance clearance (decals are passed through by the caller). */
+export function clearOfEntrance(
+  props: PropInstance[],
+  entrance: Vec3,
+  bounds: Bounds,
+): PropInstance[] {
+  const r = entranceClearance(bounds);
+  return props.filter(
+    (p) => Math.hypot(p.position[0] - entrance[0], p.position[2] - entrance[2]) > r,
+  );
+}

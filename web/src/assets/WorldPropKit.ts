@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { mergeGeometries, mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { mulberry32 } from "../pure/rng.ts";
 import type { PropInstance } from "../pure/scatter.ts";
 import type { BiomeKind, MaterialLibrary, MaterialRole } from "./MaterialLibrary.ts";
@@ -42,10 +42,13 @@ function translate(g: THREE.BufferGeometry, x: number, y: number, z: number): TH
   return g.translate(x, y, z);
 }
 export function merged(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
+  // Keep uvs only when every part has them (blobs have none), so the merge never fails.
+  const keepUv = parts.every((p) => p.attributes.uv);
   const stripped = parts.map((p) => {
     const g = p.index ? p.toNonIndexed() : p;
     for (const name of Object.keys(g.attributes)) {
-      if (name !== "position" && name !== "normal" && name !== "uv") g.deleteAttribute(name);
+      if (name !== "position" && name !== "normal" && !(keepUv && name === "uv"))
+        g.deleteAttribute(name);
     }
     return g;
   });
@@ -102,6 +105,29 @@ export function gablePrism(w: number, h: number, d: number): THREE.BufferGeometr
   return g;
 }
 
+/**
+ * A lumpy, smooth-shaded ball for canopies and bushes: an icosphere pushed in and out by a
+ * seeded hash so every tree kind has its own silhouette, squashed a little vertically.
+ */
+function blob(radius: number, seed: number, squash: number): THREE.BufferGeometry {
+  // Polyhedra are non-indexed: weld shared vertices so normals (and the noise) are smooth.
+  const raw = new THREE.IcosahedronGeometry(radius, 3);
+  raw.deleteAttribute("normal");
+  raw.deleteAttribute("uv");
+  const g = mergeVertices(raw);
+  const pos = g.attributes.position as THREE.BufferAttribute;
+  const v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    const n = Math.sin(v.x * 3.1 + seed) * Math.sin(v.y * 2.7 + seed * 0.7) * Math.sin(v.z * 3.3);
+    v.multiplyScalar(1 + n * 0.14);
+    v.y *= squash;
+    pos.setXYZ(i, v.x, v.y, v.z);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+
 /** A tuft of tapered blades fanned around the origin; reads as grass, not a billboard. */
 function grassTuft(blades: number, w: number, h: number): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
@@ -135,22 +161,27 @@ function crateEdges(size: number): THREE.BufferGeometry {
 // ---- families ---------------------------------------------------------------------
 
 export const FAMILIES: Record<string, FamilyFactory> = {
+  // Rounded, clustered canopy (stylized broadleaf), shadowed underside to sunlit crown.
   tree: () => [
-    { geometry: geo("tree.trunk", () => cyl(0.16, 0.26, 1.5, 6)), role: "bark", y: 0.75 },
-    { geometry: geo("tree.roots", () => cyl(0.4, 0.55, 0.18, 6)), role: "bark", y: 0.09 },
     {
-      geometry: geo("tree.c1", () => new THREE.ConeGeometry(1.35, 1.7, 7)),
+      geometry: geo("tree.trunk", () => cyl(0.18, 0.34, 2.2, 10)),
+      role: "bark",
+      y: 1.1,
+    },
+    { geometry: geo("tree.roots", () => cyl(0.42, 0.6, 0.22, 10)), role: "bark", y: 0.11 },
+    {
+      geometry: geo("tree.c1", () => blob(1.45, 11, 0.8)),
       role: "foliageDark",
-      y: 2.1,
+      y: 2.55,
       castShadow: true,
     },
     {
-      geometry: geo("tree.c2", () => new THREE.ConeGeometry(1.05, 1.5, 7).rotateY(0.4)),
+      geometry: geo("tree.c2", () => blob(1.1, 23, 0.85).translate(0.55, 0, 0.25)),
       role: "foliage",
-      y: 2.95,
+      y: 3.2,
     },
     {
-      geometry: geo("tree.c3", () => new THREE.ConeGeometry(0.7, 1.3, 7).rotateY(0.8)),
+      geometry: geo("tree.c3", () => blob(0.85, 37, 0.9).translate(-0.35, 0, -0.2)),
       role: "foliageLight",
       y: 3.75,
     },
@@ -451,14 +482,18 @@ export const FAMILIES: Record<string, FamilyFactory> = {
   ],
   farTree: () => [
     {
-      geometry: geo("farTree", () =>
+      geometry: geo("farTree.canopy", () =>
         merged([
-          new THREE.ConeGeometry(1.6, 3.2, 6).translate(0, 2.4, 0),
-          new THREE.ConeGeometry(1.1, 2.6, 6).translate(0, 4.0, 0),
-          cyl(0.2, 0.3, 1.2, 5).translate(0, 0.6, 0),
+          blob(1.9, 5, 0.8).translate(0, 3.0, 0),
+          blob(1.3, 19, 0.85).translate(0.6, 4.1, 0.3),
         ]),
       ),
       role: "foliageDark",
+      y: 0,
+    },
+    {
+      geometry: geo("farTree.trunk", () => cyl(0.22, 0.34, 2.2, 6).translate(0, 1.1, 0)),
+      role: "bark",
       y: 0,
     },
   ],

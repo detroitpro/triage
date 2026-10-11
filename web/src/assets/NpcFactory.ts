@@ -456,8 +456,9 @@ function chestAnchor(
   character.traverse((o) => {
     if (!(o instanceof THREE.Bone)) return;
     p.setFromMatrixPosition(o.matrixWorld).applyMatrix4(parentInverse);
-    // Only the spine/neck/head chain: arm bones share heights with the chest and face.
-    if (Math.abs(p.x) > 0.12) return;
+    // Only the spine/neck chain: shoulders and arms share heights with the chest.
+    if (!/spine|chest|neck/i.test(o.name) && Math.abs(p.x) > 0.02) return;
+    if (/shoulder|arm|clavicle|leg|thigh/i.test(o.name)) return;
     const dy = Math.abs(p.y - y);
     if (dy < bestDy) {
       bestDy = dy;

@@ -214,8 +214,13 @@ function chestPoint(
     if (!(o instanceof THREE.Mesh)) return;
     const pos = o.geometry.attributes.position as THREE.BufferAttribute | undefined;
     if (!pos) return;
+    const skinned = o instanceof THREE.SkinnedMesh ? o : null;
     for (let i = 0; i < pos.count; i++) {
-      v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+      // Packed GLBs keep positions quantized and put the scale in the bind matrices: only the
+      // skinned position is in metres.
+      if (skinned) skinned.getVertexPosition(i, v);
+      else v.fromBufferAttribute(pos, i);
+      v.applyMatrix4(o.matrixWorld);
       if (v.y >= lo && v.y <= hi && Math.abs(v.x - cx) <= halfWidth && v.z > front) front = v.z;
     }
   });

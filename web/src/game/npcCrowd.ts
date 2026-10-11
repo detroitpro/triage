@@ -232,9 +232,13 @@ export const FAR_TRIANGLES = 3000;
 /** Starts the simplifier's WebAssembly; call before any area builds (main.ts does). */
 export const simplifierReady: Promise<void> = MeshoptSimplifier.ready;
 let simplifierLoaded = false;
-void simplifierReady.then(() => {
-  simplifierLoaded = true;
-});
+simplifierReady.then(
+  () => {
+    simplifierLoaded = true;
+  },
+  // Without the simplifier, far bodies keep full detail (slower, still correct).
+  (err: unknown) => console.warn("crowd: meshopt simplifier unavailable", err),
+);
 
 /**
  * Reduce a far body to about FAR_TRIANGLES with meshoptimizer. Returns the input
@@ -243,45 +247,42 @@ void simplifierReady.then(() => {
 function simplifyFar(g: THREE.BufferGeometry): THREE.BufferGeometry {
   const pos = g.attributes.position;
   if (!simplifierLoaded || !pos || pos.count / 3 <= FAR_TRIANGLES * 1.5) return g;
-  // Weld by position alone so uv seams do not split the surface into islands (whose borders
-  // the simplifier cannot collapse); each welded vertex keeps one original vertex's uv.
+  // Weld by position and uv (not normals, which would split every crease): uv seams stay
+  // split so no triangle ever samples across the texture atlas.
   const uv = g.attributes.uv;
   const ids = new Map<string, number>();
-  const rep: number[] = [];
-  const welded: number[] = [];
+  const positions: number[] = [];
+  const uvs: number[] = [];
   const index = new Uint32Array(pos.count);
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i);
     const y = pos.getY(i);
     const z = pos.getZ(i);
-    const key = `${Math.round(x * 1e4)},${Math.round(y * 1e4)},${Math.round(z * 1e4)}`;
+    const u = uv ? uv.getX(i) : 0;
+    const v = uv ? uv.getY(i) : 0;
+    const key = `${Math.round(x * 1e4)},${Math.round(y * 1e4)},${Math.round(z * 1e4)},${Math.round(u * 1e4)},${Math.round(v * 1e4)}`;
     let id = ids.get(key);
     if (id === undefined) {
-      id = rep.length;
+      id = positions.length / 3;
       ids.set(key, id);
-      rep.push(i);
-      welded.push(x, y, z);
+      positions.push(x, y, z);
+      uvs.push(u, v);
     }
     index[i] = id;
   }
   const [indices] = MeshoptSimplifier.simplify(
     index,
-    new Float32Array(welded),
+    new Float32Array(positions),
     3,
     FAR_TRIANGLES * 3,
-    // Far bodies are a few pixels tall: a coarse error is invisible.
+    // Far bodies are a few pixels tall: a coarse error is invisible. Seam borders are not
+    // locked (locking them freezes most of a textured mesh); collapses along a seam keep
+    // each side's own uvs, so colours stay put.
     0.2,
   );
   const out = new THREE.BufferGeometry();
-  out.setAttribute("position", new THREE.Float32BufferAttribute(welded, 3));
-  if (uv) {
-    const uvs = new Float32Array(rep.length * 2);
-    rep.forEach((i, v) => {
-      uvs[v * 2] = uv.getX(i);
-      uvs[v * 2 + 1] = uv.getY(i);
-    });
-    out.setAttribute("uv", new THREE.BufferAttribute(uvs, 2));
-  }
+  out.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  if (uv) out.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
   out.setIndex(new THREE.BufferAttribute(indices, 1));
   out.computeVertexNormals();
   out.userData.shared = true;

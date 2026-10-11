@@ -510,6 +510,8 @@ export class Game {
     const fresh = buildDoor(door, this.world, built.area.biome.palette.accent, built.lib);
     built.group.add(fresh.group);
     built.doors[i] = fresh;
+    // Locked doors cast bars; the static shadow map must be redrawn without them (or with).
+    built.rig.invalidateShadows();
     if (fresh.light) built.lights.push(fresh.light);
   }
 

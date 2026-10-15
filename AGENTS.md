@@ -17,7 +17,7 @@ No Python.
 ## Commands
 
 ```bash
-make secrets-unlock   # .env from Infisical (skill: infisical-secrets)
+make secrets-unlock   # .env from Heka Vault (skill: heka-vault-secrets)
 make setup            # npm ci
 make check            # lint + typecheck + test (what CI runs)
 make smoke            # live call to OpenRouter and Jev
